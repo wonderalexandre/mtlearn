@@ -301,6 +301,13 @@ For a production release:
 The workflow rejects a tag when the tag version does not match
 `pyproject.toml`.
 
+The release wheel matrix currently targets Python 3.9 through 3.14 on:
+
+- Linux x86_64;
+- Windows x86_64;
+- macOS arm64;
+- macOS Intel x86_64.
+
 PyPI upload is intentionally manual. Download the release artifacts from the
 GitHub Release or from the workflow run, then publish them with:
 

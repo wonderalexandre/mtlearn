@@ -8,7 +8,7 @@ if(NOT pybind11_FOUND)
     include(FetchContent)
     FetchContent_Declare(
         pybind11
-        URL https://github.com/pybind/pybind11/archive/refs/tags/v2.13.1.tar.gz
+        URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.1.tar.gz
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(pybind11)
@@ -19,25 +19,25 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(MTLEARN_WITH_TORCH)
     find_package(Torch REQUIRED)
     pybind11_add_module(_mtlearn MtlearnModule.cpp)
-    # Filter Torch libraries that CMake discovered as NOTFOUND before linking.
-    if(UNIX AND NOT APPLE)
-        set(FILTERED_TORCH_LIBRARIES "")
-        foreach(lib ${TORCH_LIBRARIES})
-            if(NOT lib MATCHES "-NOTFOUND$")
-                list(APPEND FILTERED_TORCH_LIBRARIES ${lib})
-            endif()
-        endforeach()
-        target_link_libraries(_mtlearn PRIVATE mtlearn::core mmcfilters::core ${FILTERED_TORCH_LIBRARIES})
-    elseif(APPLE)
-        target_link_libraries(_mtlearn PRIVATE mtlearn::core mmcfilters::core ${TORCH_LIBRARIES})
-    endif()
+    # CMake may report optional Torch libraries as NOTFOUND on some platforms.
+    # Keep the link interface explicit and platform-neutral so Linux, macOS,
+    # and Windows wheels all link against the same project and Torch targets.
+    set(_mtlearn_torch_libraries "")
+    foreach(lib ${TORCH_LIBRARIES})
+        if(NOT lib MATCHES "-NOTFOUND$")
+            list(APPEND _mtlearn_torch_libraries ${lib})
+        endif()
+    endforeach()
+    target_link_libraries(_mtlearn PRIVATE mtlearn::core mmcfilters::core ${_mtlearn_torch_libraries})
 
-    get_filename_component(_torch_root "${TORCH_LIBRARY}" DIRECTORY)
-    find_library(TORCH_PYTHON_LIBRARY torch_python
-        HINTS "${_torch_root}" "${_torch_root}/.." "${_torch_root}/../.."
-        PATH_SUFFIXES lib)
-    if(TORCH_PYTHON_LIBRARY)
-        target_link_libraries(_mtlearn PRIVATE "${TORCH_PYTHON_LIBRARY}")
+    if(DEFINED TORCH_LIBRARY AND TORCH_LIBRARY)
+        get_filename_component(_torch_root "${TORCH_LIBRARY}" DIRECTORY)
+        find_library(TORCH_PYTHON_LIBRARY torch_python
+            HINTS "${_torch_root}" "${_torch_root}/.." "${_torch_root}/../.."
+            PATH_SUFFIXES lib)
+        if(TORCH_PYTHON_LIBRARY)
+            target_link_libraries(_mtlearn PRIVATE "${TORCH_PYTHON_LIBRARY}")
+        endif()
     endif()
     target_include_directories(_mtlearn PRIVATE
         ${PROJECT_SOURCE_DIR}/mtlearn/include

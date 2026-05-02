@@ -95,17 +95,26 @@ jobs:
           if-no-files-found: error
 
   build-wheels:
-    name: Wheel (${{ matrix.os }})
+    name: Wheel (${{ matrix.os }}, Python ${{ matrix.python-version }})
     needs: validate-version
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     strategy:
       fail-fast: false
       matrix:
         os:
           - ubuntu-latest
+          - windows-latest
           - macos-latest
+          - macos-15-intel
+        python-version:
+          - "3.9"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
 
     steps:
       - name: Check out repository
@@ -115,10 +124,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install build dependencies
@@ -142,9 +157,14 @@ jobs:
         shell: bash
         run: |
           python -m venv --system-site-packages .venv-release
-          .venv-release/bin/python -m pip install --upgrade pip
-          .venv-release/bin/python -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
-          .venv-release/bin/python - <<'PY'
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            venv_python=".venv-release/Scripts/python.exe"
+          else
+            venv_python=".venv-release/bin/python"
+          fi
+          "${venv_python}" -m pip install --upgrade pip
+          "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
+          "${venv_python}" - <<'PY'
           import numpy as np
           import torch
 
@@ -176,7 +196,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:
-          name: release-wheel-${{ matrix.os }}
+          name: release-wheel-${{ matrix.os }}-py${{ matrix.python-version }}
           path: dist/*.whl
           if-no-files-found: error
 

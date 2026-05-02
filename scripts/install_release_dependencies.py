@@ -25,13 +25,13 @@ def run_pip(*args: str) -> None:
 def minimum_torch_version() -> str:
     """Return the lowest Torch version used for this Python wheel build."""
 
+    if platform.system() == "Darwin" and platform.machine() == "x86_64":
+        return "2.2.2"
     if sys.version_info >= (3, 14):
         return "2.11.0"
-    if sys.version_info >= (3, 13):
-        return "2.6.0"
-    if sys.version_info >= (3, 12):
-        return "2.2.2"
-    return "2.0.1"
+    if sys.version_info >= (3, 10):
+        return "2.9.0"
+    return "2.8.0"
 
 
 def version_tuple(version: str) -> tuple[int, ...]:

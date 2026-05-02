@@ -39,6 +39,7 @@ if(MTLEARN_WITH_TORCH)
             target_link_libraries(_mtlearn PRIVATE "${TORCH_PYTHON_LIBRARY}")
         endif()
     endif()
+    target_include_directories(_mtlearn BEFORE PRIVATE ${pybind11_INCLUDE_DIRS})
     target_include_directories(_mtlearn PRIVATE
         ${PROJECT_SOURCE_DIR}/mtlearn/include
         ${PROJECT_SOURCE_DIR}/mtlearn/src

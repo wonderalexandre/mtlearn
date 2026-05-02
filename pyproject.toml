@@ -3,13 +3,16 @@ requires = [
   "scikit-build-core>=0.9",
   "pybind11>=3.0.1",
   "setuptools-scm>=8",
-  "torch>=2.0"
+  "torch>=2.0.1; python_version < '3.12'",
+  "torch>=2.2.2; python_version >= '3.12' and python_version < '3.13'",
+  "torch>=2.6.0; python_version >= '3.13' and python_version < '3.14'",
+  "torch>=2.11.0; python_version >= '3.14'"
 ]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "mtlearn"
-version = "1.0.1"
+version = "1.0.2"
 description = "Morphological tree learning utilities with a stable morphology facade"
 readme = "README.md"
 authors = [{ name = "Wonder Alexandre Luz Alves", email = "worderalexandre@gmail.com" }]
@@ -34,7 +37,10 @@ dependencies = [
   "numpy>=1.23",
   "opencv-python-headless>=4.8",
   "scikit-learn>=1.2",
-  "torch>=2.0"
+  "torch>=2.0.1; python_version < '3.12'",
+  "torch>=2.2.2; python_version >= '3.12' and python_version < '3.13'",
+  "torch>=2.6.0; python_version >= '3.13' and python_version < '3.14'",
+  "torch>=2.11.0; python_version >= '3.14'"
 ]
 
 [project.urls]

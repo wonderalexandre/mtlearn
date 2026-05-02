@@ -195,7 +195,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: python -m build --wheel --outdir dist --no-isolation
 
-      - name: Install wheel and run smoke test
+      - name: Install wheel and run smoke test with minimum Torch
         shell: bash
         run: |
           python -m venv --system-site-packages .venv-release
@@ -206,6 +206,21 @@ jobs:
           fi
           "${venv_python}" -m pip install --upgrade pip
           "${venv_python}" scripts/install_release_dependencies.py
+          "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
+          "${venv_python}" scripts/smoke_test_release.py --expected-version "${{ needs.validate-version.outputs.package-version }}"
+
+      - name: Install wheel and run smoke test with latest Torch
+        if: matrix.python-version == '3.12'
+        shell: bash
+        run: |
+          python -m venv .venv-release-latest
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            venv_python=".venv-release-latest/Scripts/python.exe"
+          else
+            venv_python=".venv-release-latest/bin/python"
+          fi
+          "${venv_python}" -m pip install --upgrade pip
+          "${venv_python}" scripts/install_release_dependencies.py --torch latest
           "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
           "${venv_python}" scripts/smoke_test_release.py --expected-version "${{ needs.validate-version.outputs.package-version }}"
 
@@ -278,7 +293,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install twine
           python - <<'PY'
+          from email.parser import Parser
           from pathlib import Path
+          from packaging.requirements import Requirement
           from zipfile import ZipFile
 
           bad = []
@@ -300,8 +317,21 @@ jobs:
                       if name.endswith(".dist-info/METADATA")
                   )
                   metadata = zf.read(metadata_name).decode()
+              requirements = [
+                  Requirement(value)
+                  for value in (Parser().parsestr(metadata).get_all("Requires-Dist") or [])
+              ]
+              torch_requirements = [
+                  requirement
+                  for requirement in requirements
+                  if requirement.name == "torch"
+              ]
               if "Requires-Dist: numpy" not in metadata:
                   raise SystemExit(f"{wheel.name} is missing NumPy dependency")
+              if not torch_requirements:
+                  raise SystemExit(f"{wheel.name} is missing Torch dependency")
+              if any(requirement.marker is None for requirement in torch_requirements):
+                  raise SystemExit(f"{wheel.name} has an unqualified broad Torch dependency")
               if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
                   raise SystemExit(f"{wheel.name} forces NumPy below 2")
           PY

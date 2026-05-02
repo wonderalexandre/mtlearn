@@ -31,6 +31,20 @@ pip install mtlearn
 NumPy below 2, which avoids downgrading the default NumPy stack in environments
 such as Google Colab.
 
+The native `_mtlearn` extension links against LibTorch. Version 1.0.2 and newer
+therefore declare the lowest tested PyTorch version per Python version instead
+of one broad unqualified requirement:
+
+| Python | PyTorch requirement |
+| --- | --- |
+| 3.9, 3.10, 3.11 | `torch>=2.0.1` |
+| 3.12 | `torch>=2.2.2` |
+| 3.13 | `torch>=2.6.0` |
+| 3.14 | `torch>=2.11.0` |
+
+Release wheels are built against these minimum Torch versions so they avoid
+referencing newer LibTorch symbols than the declared lower bound provides.
+
 For notebooks:
 
 ```bash
@@ -61,7 +75,7 @@ external/MorphologicalAttributeFilters
 ## Editable Install
 
 ```bash
-pip install build scikit-build-core pybind11 torch
+python scripts/install_release_dependencies.py --build-tools
 pip install -e .
 ```
 
@@ -74,7 +88,7 @@ pip install -e ".[notebooks]"
 ## Wheel Build
 
 ```bash
-pip install build scikit-build-core pybind11 torch
+python scripts/install_release_dependencies.py --build-tools
 python -m build --wheel
 python -m pip install dist/mtlearn-*.whl
 ```
@@ -282,6 +296,7 @@ cmake -S . -B build-cpp \
       -DMTLEARN_BUILD_TESTS=ON
 cmake --build build-cpp --parallel
 ctest --test-dir build-cpp --output-on-failure
+python scripts/install_release_dependencies.py --build-tools
 python -m build --wheel --no-isolation
 python -m pip install dist/mtlearn-*.whl
 python scripts/validate_notebooks.py --installed-package

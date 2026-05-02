@@ -7,6 +7,8 @@ explicit dense tree-to-pixel Jacobian. This makes the math easier to inspect
 and gradcheck, at the cost of much higher memory use.
 """
 
+from __future__ import annotations
+
 import math
 import torch
 import numpy as np

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # %% setup
 import os, glob, time
 import numpy as np

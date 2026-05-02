@@ -12,6 +12,8 @@ learnable parameters are the per-attribute-group weight vectors and biases that
 produce the node-wise sigmoid filtering criterion.
 """
 
+from __future__ import annotations
+
 import math
 import torch
 import numpy as np

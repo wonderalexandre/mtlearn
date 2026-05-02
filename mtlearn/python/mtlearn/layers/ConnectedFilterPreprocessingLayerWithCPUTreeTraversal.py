@@ -7,6 +7,8 @@ or dense-Jacobian PyTorch formulations. The implementation is useful for
 comparison with historical experiments and backend behavior.
 """
 
+from __future__ import annotations
+
 import math
 import torch
 import numpy as np

@@ -76,40 +76,42 @@ jobs:
           print(f"checked {archives[0]} with {len(names)} entries")
           PY
 
+      - name: Inspect wheel metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = sorted(Path("dist").glob("mtlearn-*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one wheel, found {wheels}")
+
+          with ZipFile(wheels[0]) as zf:
+              metadata_name = next(
+                  name for name in zf.namelist()
+                  if name.endswith(".dist-info/METADATA")
+              )
+              metadata = zf.read(metadata_name).decode()
+
+          if "Requires-Dist: numpy" not in metadata:
+              raise SystemExit("missing NumPy dependency")
+          if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
+              raise SystemExit("wheel metadata must not force NumPy below 2")
+          PY
+
       - name: Install wheel and run smoke test
         shell: bash
         run: |
           python -m venv --system-site-packages .venv-install
           .venv-install/bin/python -m pip install --upgrade pip
           .venv-install/bin/python -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
-          .venv-install/bin/python - <<'PY'
-          import numpy as np
-          import torch
-
-          import mtlearn
-          from mtlearn import morphology
-          from mtlearn.layers import ConnectedFilterPreprocessingLayer
-
-          assert mtlearn.__version__ == "1.0.0"
-          image = np.array([[1, 2], [3, 4]], dtype=np.uint8)
-          tree = morphology.create_max_tree(image)
-          attr_index, attr_values = morphology.compute_attributes(
-              tree,
-              [morphology.AttributeType.AREA],
-          )
-          assert attr_index["AREA"] == 0
-          assert attr_values.shape[0] == tree.numInternalNodeSlots
-
-          layer = ConnectedFilterPreprocessingLayer(
-              in_channels=1,
-              attributes_spec=[(morphology.AttributeType.AREA,)],
-              tree_type="max-tree",
-              device="cpu",
-              scale_mode="none",
-          )
-          y = layer(torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32))
-          assert y.shape == (1, 1, 2, 2)
+          version="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])
           PY
+          )"
+          .venv-install/bin/python scripts/smoke_test_release.py --expected-version "${version}"
 
       - name: Upload distributions
         uses: actions/upload-artifact@v7

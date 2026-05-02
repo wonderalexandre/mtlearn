@@ -10,6 +10,7 @@ duplicating shell snippets across the native and manylinux jobs.
 from __future__ import annotations
 
 import argparse
+import platform
 import subprocess
 import sys
 
@@ -18,10 +19,19 @@ def run_pip(*args: str) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", *args])
 
 
-def numpy_requirement() -> str:
-    if sys.version_info < (3, 13):
+def needs_legacy_numpy() -> bool:
+    """Return whether this runner should avoid NumPy 2 during release builds."""
+    return (
+        sys.version_info < (3, 13)
+        and platform.system() == "Darwin"
+        and platform.machine() == "x86_64"
+    )
+
+
+def numpy_requirement(force_legacy: bool = False) -> str:
+    if force_legacy or needs_legacy_numpy():
         return "numpy>=1.23,<2"
-    return "numpy>=2.0"
+    return "numpy>=1.23"
 
 
 def install_build_tools() -> None:
@@ -34,10 +44,10 @@ def install_build_tools() -> None:
     )
 
 
-def install_runtime_dependencies() -> None:
+def install_runtime_dependencies(force_legacy_numpy: bool) -> None:
     run_pip(
         "install",
-        numpy_requirement(),
+        numpy_requirement(force_legacy_numpy),
         "opencv-python-headless",
         "scikit-learn",
     )
@@ -59,6 +69,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Install Python build front-end and scikit-build dependencies.",
     )
+    parser.add_argument(
+        "--legacy-numpy",
+        action="store_true",
+        help="Install NumPy 1.x for environments with old PyTorch wheels.",
+    )
     return parser.parse_args()
 
 
@@ -67,7 +82,7 @@ def main() -> int:
     run_pip("install", "--upgrade", "pip")
     if args.build_tools:
         install_build_tools()
-    install_runtime_dependencies()
+    install_runtime_dependencies(args.legacy_numpy)
     install_torch()
     return 0
 

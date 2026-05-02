@@ -27,6 +27,10 @@ Python extension also requires Torch support.
 pip install mtlearn
 ```
 
+`mtlearn` supports NumPy 1.x and 2.x. Version 1.0.1 and newer do not force
+NumPy below 2, which avoids downgrading the default NumPy stack in environments
+such as Google Colab.
+
 For notebooks:
 
 ```bash

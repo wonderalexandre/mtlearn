@@ -279,6 +279,7 @@ jobs:
           python -m pip install twine
           python - <<'PY'
           from pathlib import Path
+          from zipfile import ZipFile
 
           bad = []
           for wheel in sorted(Path("dist").glob("*.whl")):
@@ -291,6 +292,18 @@ jobs:
                   "Linux wheels must use manylinux or musllinux platform tags: "
                   + ", ".join(bad)
               )
+
+          for wheel in sorted(Path("dist").glob("*.whl")):
+              with ZipFile(wheel) as zf:
+                  metadata_name = next(
+                      name for name in zf.namelist()
+                      if name.endswith(".dist-info/METADATA")
+                  )
+                  metadata = zf.read(metadata_name).decode()
+              if "Requires-Dist: numpy" not in metadata:
+                  raise SystemExit(f"{wheel.name} is missing NumPy dependency")
+              if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
+                  raise SystemExit(f"{wheel.name} forces NumPy below 2")
           PY
           python -m twine check dist/*
 

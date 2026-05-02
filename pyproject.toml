@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "mtlearn"
-version = "1.0.0"
+version = "1.0.1"
 description = "Morphological tree learning utilities with a stable morphology facade"
 readme = "README.md"
 authors = [{ name = "Wonder Alexandre Luz Alves", email = "worderalexandre@gmail.com" }]
@@ -31,8 +31,7 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
-  "numpy>=1.23,<2; python_version < '3.13'",
-  "numpy>=2.0; python_version >= '3.13'",
+  "numpy>=1.23",
   "opencv-python-headless>=4.8",
   "scikit-learn>=1.2",
   "torch>=2.0"

@@ -1,0 +1,129 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.9",
+  "pybind11>=2.10",
+  "setuptools-scm>=8",
+  "torch>=2.0"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "mtlearn"
+version = "1.0.0"
+description = "Morphological tree learning utilities with a stable morphology facade"
+readme = "README.md"
+authors = [{ name = "Wonder Alexandre Luz Alves", email = "worderalexandre@gmail.com" }]
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: C++",
+  "Topic :: Scientific/Engineering :: Image Processing",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+  "torch>=2.0"
+]
+
+[project.urls]
+Source = "https://github.com/wonderalexandre/mtlearn"
+Issues = "https://github.com/wonderalexandre/mtlearn/issues"
+
+[project.optional-dependencies]
+notebooks = [
+  "ipykernel",
+  "nbformat>=5",
+  "papermill>=2.4"
+]
+test = [
+  "pytest>=8"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["mtlearn/tests/python"]
+markers = [
+  "gradcheck: numerical gradient checks for custom autograd functions",
+  "integration: tests that require the native extension and Torch",
+  "slow: tests that are slower than ordinary unit tests",
+  "cuda: tests that require a CUDA-capable runtime"
+]
+
+[tool.scikit-build]
+wheel.packages = ["mtlearn/python/mtlearn"]
+
+[tool.scikit-build.cmake]
+build-type = "Release"
+
+[tool.scikit-build.cmake.define]
+MTLEARN_BUILD_TESTS = "OFF"
+MTLEARN_ENABLE_EMBED = "OFF"
+MTLEARN_ENABLE_ASSERTS = "OFF"
+MTLEARN_WITH_TORCH = "ON"
+MMCFILTERS_BUILD_PYTHON = "OFF"
+
+[tool.scikit-build.sdist]
+include = [
+  "/CMakeLists.txt",
+  "/cmake/**",
+  "/mtlearn/include/**",
+  "/mtlearn/src/**",
+  "/mtlearn/bindings/CMakeLists.txt",
+  "/mtlearn/bindings/*.cpp",
+  "/mtlearn/bindings/*.hpp",
+  "/mtlearn/bindings/cfp/*.hpp",
+  "/mtlearn/bindings/morphology/*.hpp",
+  "/mtlearn/python/**/*.py",
+  "/mtlearn/tests/CMakeLists.txt",
+  "/mtlearn/tests/cmake/*.cmake",
+  "/mtlearn/tests/cpp/*.cpp",
+  "/mtlearn/tests/python/*.py",
+  "/scripts/*.py",
+  "/docs/installation.md",
+  "/external/MorphologicalAttributeFilters/CMakeLists.txt",
+  "/external/MorphologicalAttributeFilters/LICENSE",
+  "/external/MorphologicalAttributeFilters/README.md",
+  "/external/MorphologicalAttributeFilters/cmake/**",
+  "/external/MorphologicalAttributeFilters/mmcfilters/**",
+  "/external/MorphologicalAttributeFilters/pybinds/*.hpp",
+  "/LICENSE",
+  "/README.md"
+]
+exclude = [
+  ".gitignore",
+  ".gitmodules",
+  "dat/**",
+  "notebooks/**",
+  "build/**",
+  "docs/source-layout-refactoring-plan.md",
+  "external/MorphologicalAttributeFilters/.git",
+  "external/MorphologicalAttributeFilters/.git/**",
+  "external/MorphologicalAttributeFilters/.github/**",
+  "external/MorphologicalAttributeFilters/.gitignore",
+  "external/MorphologicalAttributeFilters/.vscode/**",
+  "external/MorphologicalAttributeFilters/MANIFEST.in",
+  "external/MorphologicalAttributeFilters/dat/**",
+  "external/MorphologicalAttributeFilters/docs/**",
+  "external/MorphologicalAttributeFilters/examples/**",
+  "external/MorphologicalAttributeFilters/examples/CMakeLists.txt",
+  "external/MorphologicalAttributeFilters/external/**",
+  "external/MorphologicalAttributeFilters/notebooks/**",
+  "external/MorphologicalAttributeFilters/notebooks/README.md",
+  "external/MorphologicalAttributeFilters/old_setup.py",
+  "external/MorphologicalAttributeFilters/pybind11.cmake",
+  "external/MorphologicalAttributeFilters/pybinds/mmcfilters.cpp",
+  "external/MorphologicalAttributeFilters/pyproject.toml",
+  "external/MorphologicalAttributeFilters/python/**",
+  "external/MorphologicalAttributeFilters/unit-tests/**",
+  "external/MorphologicalAttributeFilters/unit-tests/CMakeLists.txt",
+  "**/.ipynb_checkpoints/**",
+  "**/.ipynb_checkpoints",
+  "mtlearn/python/**/__pycache__/**",
+  "mtlearn/python/**/__pycache__",
+  "mtlearn/python/**/*.py[cod]",
+  "**/__pycache__/**",
+  "**/__pycache__",
+  "**/*.py[cod]"
+]

@@ -1,0 +1,352 @@
+#pragma once
+
+// Shared support code for morphology pybind wrappers.
+//
+// This header centralizes lifetime management, NumPy conversion, validation,
+// and facade-to-backend enum translation. Keeping these pieces in one file
+// reduces the chance that individual bindings accidentally expose mmcfilters
+// details or return arrays backed by expired C++ storage.
+
+#include "mtlearn/detail/morphology_backend.hpp"
+#include "mtlearn/morphology.hpp"
+
+#include <mmcfilters/attributes/AttributeNames.hpp>
+#include <mmcfilters/utils/Image.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <sstream>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include <pybind11/numpy.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+namespace mtlearn {
+
+namespace py = pybind11;
+using namespace pybind11::literals;
+
+namespace morphology_pybind {
+
+using UInt8InputArray = py::array_t<uint8_t, py::array::c_style | py::array::forcecast>;
+using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
+
+// Wrap a backend-owned image buffer as a NumPy array. The capsule owns a
+// shared_ptr copy so the backend image memory remains alive for Python even
+// after the C++ image handle leaves scope.
+template <typename PixelType>
+py::array_t<PixelType> imageToNumpy(mmcfilters::ImagePtr<PixelType> image)
+{
+    const int numCols = image->getNumCols();
+    const int numRows = image->getNumRows();
+    std::shared_ptr<PixelType[]> buffer = image->rawDataPtr();
+
+    py::capsule freeWhenDone(new std::shared_ptr<PixelType[]>(buffer), [](void* ptr) {
+        delete reinterpret_cast<std::shared_ptr<PixelType[]>*>(ptr);
+    });
+
+    const py::ssize_t itemSize = sizeof(PixelType);
+    return py::array_t<PixelType>(
+        {static_cast<py::ssize_t>(numRows), static_cast<py::ssize_t>(numCols)},
+        {static_cast<py::ssize_t>(numCols) * itemSize, itemSize},
+        buffer.get(),
+        freeWhenDone);
+}
+
+// Wrap an mtlearn-owned reconstruction image as a NumPy array. The pixel
+// vector is moved to heap storage and released by the pybind capsule.
+inline py::array_t<uint8_t> imageToNumpy(morphology::UInt8Image image)
+{
+    const int numRows = image.rows;
+    const int numCols = image.cols;
+    auto* owned = new std::vector<uint8_t>(std::move(image.pixels));
+
+    py::capsule freeWhenDone(owned, [](void* ptr) {
+        delete reinterpret_cast<std::vector<uint8_t>*>(ptr);
+    });
+
+    const py::ssize_t itemSize = sizeof(uint8_t);
+    return py::array_t<uint8_t>(
+        {static_cast<py::ssize_t>(numRows), static_cast<py::ssize_t>(numCols)},
+        {static_cast<py::ssize_t>(numCols) * itemSize, itemSize},
+        owned->data(),
+        freeWhenDone);
+}
+
+// Move an owned std::vector<float> into a NumPy array without copying. The
+// capsule owns the vector and therefore controls the array's backing storage.
+inline py::array_t<float> vectorToNumpyOwned(std::vector<float>&& buffer, int rows, int cols)
+{
+    auto* owned = new std::vector<float>(std::move(buffer));
+    py::capsule freeWhenDone(owned, [](void* ptr) {
+        delete reinterpret_cast<std::vector<float>*>(ptr);
+    });
+
+    return py::array_t<float>(
+        {rows, cols},
+        {static_cast<py::ssize_t>(sizeof(float) * cols), static_cast<py::ssize_t>(sizeof(float))},
+        owned->data(),
+        freeWhenDone);
+}
+
+// One-dimensional overload used by single-attribute computations.
+inline py::array_t<float> vectorToNumpyOwned(std::vector<float>&& buffer, int size)
+{
+    auto* owned = new std::vector<float>(std::move(buffer));
+    py::capsule freeWhenDone(owned, [](void* ptr) {
+        delete reinterpret_cast<std::vector<float>*>(ptr);
+    });
+
+    return py::array_t<float>(
+        {size},
+        {static_cast<py::ssize_t>(sizeof(float))},
+        owned->data(),
+        freeWhenDone);
+}
+
+// Convert Python input into the public non-owning image view expected by the
+// morphology facade. py::array::c_style guarantees row-major contiguous layout.
+inline morphology::ImageViewUInt8 imageViewFromArray(const UInt8InputArray& input)
+{
+    auto buffer = input.request();
+    if (buffer.ndim != 2) {
+        throw std::invalid_argument("input must be a 2D uint8 array");
+    }
+
+    return morphology::ImageViewUInt8{
+        static_cast<const uint8_t*>(buffer.ptr),
+        static_cast<int>(buffer.shape[0]),
+        static_cast<int>(buffer.shape[1])};
+}
+
+// Create a shared_ptr view over a NumPy float array while capturing the Python
+// object as owner. This lets backend APIs consume shared_ptr<float[]> without
+// copying attribute buffers supplied from Python.
+inline std::shared_ptr<float[]> floatArrayView(const FloatArray& input)
+{
+    return std::shared_ptr<float[]>(
+        static_cast<float*>(input.request().ptr),
+        [owner = py::object(input)](float*) mutable {});
+}
+
+// Validation helpers keep binding errors consistent and fail before backend
+// calls receive incorrectly shaped Python data.
+inline void require1DArray(const py::buffer_info& buffer, py::ssize_t expectedSize, std::string_view argumentName)
+{
+    if (buffer.ndim != 1) {
+        std::ostringstream message;
+        message << argumentName << " must be a 1D array";
+        throw std::invalid_argument(message.str());
+    }
+    if (buffer.shape[0] != expectedSize) {
+        std::ostringstream message;
+        message << argumentName << " must have length " << expectedSize
+                << ", got " << buffer.shape[0];
+        throw std::invalid_argument(message.str());
+    }
+}
+
+template <class T>
+void requireVectorSize(const std::vector<T>& values, std::size_t expectedSize, std::string_view argumentName)
+{
+    if (values.size() != expectedSize) {
+        std::ostringstream message;
+        message << argumentName << " must have length " << expectedSize
+                << ", got " << values.size();
+        throw std::invalid_argument(message.str());
+    }
+}
+
+// The following conversion functions are the authoritative mapping from the
+// mtlearn public C++ facade to mmcfilters. Whenever a public enum is extended,
+// update this table and the corresponding Python enum exposure together.
+inline mmcfilters::NodeIdSpace toBackend(morphology::NodeIdSpace outputSpace)
+{
+    switch (outputSpace) {
+    case morphology::NodeIdSpace::MORPHOLOGICAL_TREE:
+        return mmcfilters::NodeIdSpace::MORPHOLOGICAL_TREE;
+    case morphology::NodeIdSpace::HIGRA:
+        return mmcfilters::NodeIdSpace::HIGRA;
+    }
+    throw std::invalid_argument("unknown NodeIdSpace");
+}
+
+inline mmcfilters::AttributeGroup toBackend(morphology::AttributeGroup group)
+{
+    switch (group) {
+    case morphology::AttributeGroup::ALL:
+        return mmcfilters::AttributeGroup::ALL;
+    case morphology::AttributeGroup::GEOMETRIC:
+        return mmcfilters::AttributeGroup::GEOMETRIC;
+    case morphology::AttributeGroup::MOMENT_BASED:
+        return mmcfilters::AttributeGroup::MOMENT_BASED;
+    case morphology::AttributeGroup::BOUNDING_BOX:
+        return mmcfilters::AttributeGroup::BOUNDING_BOX;
+    case morphology::AttributeGroup::CENTRAL_MOMENTS:
+        return mmcfilters::AttributeGroup::CENTRAL_MOMENTS;
+    case morphology::AttributeGroup::HU_MOMENTS:
+        return mmcfilters::AttributeGroup::HU_MOMENTS;
+    case morphology::AttributeGroup::TEXTURE:
+        return mmcfilters::AttributeGroup::TEXTURE;
+    case morphology::AttributeGroup::TREE_TOPOLOGY:
+        return mmcfilters::AttributeGroup::TREE_TOPOLOGY;
+    case morphology::AttributeGroup::BITQUADS:
+        return mmcfilters::AttributeGroup::BITQUADS;
+    }
+    throw std::invalid_argument("unknown AttributeGroup");
+}
+
+inline mmcfilters::Attribute toBackend(morphology::Attribute attribute)
+{
+    switch (attribute) {
+    case morphology::Attribute::AREA:
+        return mmcfilters::Attribute::AREA;
+    case morphology::Attribute::VOLUME:
+        return mmcfilters::Attribute::VOLUME;
+    case morphology::Attribute::RELATIVE_VOLUME:
+        return mmcfilters::Attribute::RELATIVE_VOLUME;
+    case morphology::Attribute::LEVEL:
+        return mmcfilters::Attribute::LEVEL;
+    case morphology::Attribute::GRAY_HEIGHT:
+        return mmcfilters::Attribute::GRAY_HEIGHT;
+    case morphology::Attribute::MEAN_LEVEL:
+        return mmcfilters::Attribute::MEAN_LEVEL;
+    case morphology::Attribute::VARIANCE_LEVEL:
+        return mmcfilters::Attribute::VARIANCE_LEVEL;
+    case morphology::Attribute::BOX_WIDTH:
+        return mmcfilters::Attribute::BOX_WIDTH;
+    case morphology::Attribute::BOX_HEIGHT:
+        return mmcfilters::Attribute::BOX_HEIGHT;
+    case morphology::Attribute::DIAGONAL_LENGTH:
+        return mmcfilters::Attribute::DIAGONAL_LENGTH;
+    case morphology::Attribute::RECTANGULARITY:
+        return mmcfilters::Attribute::RECTANGULARITY;
+    case morphology::Attribute::RATIO_WH:
+        return mmcfilters::Attribute::RATIO_WH;
+    case morphology::Attribute::BOX_COL_MIN:
+        return mmcfilters::Attribute::BOX_COL_MIN;
+    case morphology::Attribute::BOX_COL_MAX:
+        return mmcfilters::Attribute::BOX_COL_MAX;
+    case morphology::Attribute::BOX_ROW_MIN:
+        return mmcfilters::Attribute::BOX_ROW_MIN;
+    case morphology::Attribute::BOX_ROW_MAX:
+        return mmcfilters::Attribute::BOX_ROW_MAX;
+    case morphology::Attribute::CENTRAL_MOMENT_20:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_20;
+    case morphology::Attribute::CENTRAL_MOMENT_02:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_02;
+    case morphology::Attribute::CENTRAL_MOMENT_11:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_11;
+    case morphology::Attribute::CENTRAL_MOMENT_30:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_30;
+    case morphology::Attribute::CENTRAL_MOMENT_03:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_03;
+    case morphology::Attribute::CENTRAL_MOMENT_21:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_21;
+    case morphology::Attribute::CENTRAL_MOMENT_12:
+        return mmcfilters::Attribute::CENTRAL_MOMENT_12;
+    case morphology::Attribute::HU_MOMENT_1:
+        return mmcfilters::Attribute::HU_MOMENT_1;
+    case morphology::Attribute::HU_MOMENT_2:
+        return mmcfilters::Attribute::HU_MOMENT_2;
+    case morphology::Attribute::HU_MOMENT_3:
+        return mmcfilters::Attribute::HU_MOMENT_3;
+    case morphology::Attribute::HU_MOMENT_4:
+        return mmcfilters::Attribute::HU_MOMENT_4;
+    case morphology::Attribute::HU_MOMENT_5:
+        return mmcfilters::Attribute::HU_MOMENT_5;
+    case morphology::Attribute::HU_MOMENT_6:
+        return mmcfilters::Attribute::HU_MOMENT_6;
+    case morphology::Attribute::HU_MOMENT_7:
+        return mmcfilters::Attribute::HU_MOMENT_7;
+    case morphology::Attribute::INERTIA:
+        return mmcfilters::Attribute::INERTIA;
+    case morphology::Attribute::COMPACTNESS:
+        return mmcfilters::Attribute::COMPACTNESS;
+    case morphology::Attribute::ECCENTRICITY:
+        return mmcfilters::Attribute::ECCENTRICITY;
+    case morphology::Attribute::LENGTH_MAJOR_AXIS:
+        return mmcfilters::Attribute::LENGTH_MAJOR_AXIS;
+    case morphology::Attribute::LENGTH_MINOR_AXIS:
+        return mmcfilters::Attribute::LENGTH_MINOR_AXIS;
+    case morphology::Attribute::AXIS_ORIENTATION:
+        return mmcfilters::Attribute::AXIS_ORIENTATION;
+    case morphology::Attribute::CIRCULARITY:
+        return mmcfilters::Attribute::CIRCULARITY;
+    case morphology::Attribute::BITQUADS_AREA:
+        return mmcfilters::Attribute::BITQUADS_AREA;
+    case morphology::Attribute::BITQUADS_NUMBER_EULER:
+        return mmcfilters::Attribute::BITQUADS_NUMBER_EULER;
+    case morphology::Attribute::BITQUADS_NUMBER_HOLES:
+        return mmcfilters::Attribute::BITQUADS_NUMBER_HOLES;
+    case morphology::Attribute::BITQUADS_PERIMETER:
+        return mmcfilters::Attribute::BITQUADS_PERIMETER;
+    case morphology::Attribute::BITQUADS_PERIMETER_CONTINUOUS:
+        return mmcfilters::Attribute::BITQUADS_PERIMETER_CONTINUOUS;
+    case morphology::Attribute::BITQUADS_CIRCULARITY:
+        return mmcfilters::Attribute::BITQUADS_CIRCULARITY;
+    case morphology::Attribute::BITQUADS_PERIMETER_AVERAGE:
+        return mmcfilters::Attribute::BITQUADS_PERIMETER_AVERAGE;
+    case morphology::Attribute::BITQUADS_LENGTH_AVERAGE:
+        return mmcfilters::Attribute::BITQUADS_LENGTH_AVERAGE;
+    case morphology::Attribute::BITQUADS_WIDTH_AVERAGE:
+        return mmcfilters::Attribute::BITQUADS_WIDTH_AVERAGE;
+    case morphology::Attribute::HEIGHT_NODE:
+        return mmcfilters::Attribute::HEIGHT_NODE;
+    case morphology::Attribute::DEPTH_NODE:
+        return mmcfilters::Attribute::DEPTH_NODE;
+    case morphology::Attribute::IS_LEAF_NODE:
+        return mmcfilters::Attribute::IS_LEAF_NODE;
+    case morphology::Attribute::IS_ROOT_NODE:
+        return mmcfilters::Attribute::IS_ROOT_NODE;
+    case morphology::Attribute::NUM_CHILDREN_NODE:
+        return mmcfilters::Attribute::NUM_CHILDREN_NODE;
+    case morphology::Attribute::NUM_SIBLINGS_NODE:
+        return mmcfilters::Attribute::NUM_SIBLINGS_NODE;
+    case morphology::Attribute::NUM_DESCENDANTS_NODE:
+        return mmcfilters::Attribute::NUM_DESCENDANTS_NODE;
+    case morphology::Attribute::NUM_LEAF_DESCENDANTS_NODE:
+        return mmcfilters::Attribute::NUM_LEAF_DESCENDANTS_NODE;
+    case morphology::Attribute::LEAF_RATIO_NODE:
+        return mmcfilters::Attribute::LEAF_RATIO_NODE;
+    case morphology::Attribute::BALANCE_NODE:
+        return mmcfilters::Attribute::BALANCE_NODE;
+    case morphology::Attribute::MAX_DIST:
+        return mmcfilters::Attribute::MAX_DIST;
+    case morphology::Attribute::AVG_CHILD_HEIGHT_NODE:
+        return mmcfilters::Attribute::AVG_CHILD_HEIGHT_NODE;
+    }
+    throw std::invalid_argument("unknown Attribute");
+}
+
+inline mmcfilters::AttributeOrGroup toBackend(morphology::AttributeOrGroup attribute)
+{
+    // Variants allow Python/C++ callers to request either one concrete
+    // attribute or a backend-expanded attribute group through a single API.
+    return std::visit(
+        [](auto value) -> mmcfilters::AttributeOrGroup {
+            return toBackend(value);
+        },
+        attribute);
+}
+
+inline std::vector<mmcfilters::AttributeOrGroup> toBackend(const std::vector<morphology::AttributeOrGroup>& attributes)
+{
+    // Preserve request order; the backend AttributeNames object determines the
+    // final output column mapping returned to Python.
+    std::vector<mmcfilters::AttributeOrGroup> result;
+    result.reserve(attributes.size());
+    for (const auto& attribute : attributes) {
+        result.push_back(toBackend(attribute));
+    }
+    return result;
+}
+
+} // namespace morphology_pybind
+} // namespace mtlearn

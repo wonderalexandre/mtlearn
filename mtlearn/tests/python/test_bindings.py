@@ -1,0 +1,176 @@
+import mtlearn
+import pytest
+
+if not getattr(mtlearn, "WITH_TORCH", False):
+    pytest.skip("build has no LibTorch support", allow_module_level=True)
+
+try:
+    import numpy as np
+    import torch
+except Exception as exc:  # pragma: no cover
+    pytest.skip(f"Python dependency unavailable: {exc}", allow_module_level=True)
+
+from mtlearn import morphology
+from mtlearn.layers._helpers import build_tree
+
+pytestmark = pytest.mark.integration
+
+
+def test_morphology_facade_uses_native_backend():
+    assert morphology.Tree is mtlearn._bindings.WeightedMorphologicalTree
+    assert morphology.WeightedTree is mtlearn._bindings.WeightedMorphologicalTree
+    assert morphology.WeightedMorphologicalTree is mtlearn._bindings.WeightedMorphologicalTree
+
+
+def test_top_level_public_modules_are_exported():
+    assert "data" in mtlearn.__all__
+    assert "datasets" in mtlearn.__all__
+    assert "layers" in mtlearn.__all__
+    assert "morphology" in mtlearn.__all__
+    assert "TreeStats" not in mtlearn.__all__
+    assert "make_tree_stats" not in mtlearn.__all__
+    assert "make_tree_tensor" not in mtlearn.__all__
+    assert "ConnectedFilterByJacobian" not in mtlearn.__all__
+    assert "InfoTree" not in mtlearn.__all__
+    assert "ConnectedFilterByMorphologicalTree" not in mtlearn.__all__
+    assert not hasattr(mtlearn, "TreeStats")
+    assert not hasattr(mtlearn, "make_tree_stats")
+    assert not hasattr(mtlearn, "make_tree_tensor")
+    assert not hasattr(mtlearn, "ConnectedFilterByJacobian")
+    assert not hasattr(mtlearn, "InfoTree")
+    assert not hasattr(mtlearn, "ConnectedFilterByMorphologicalTree")
+    assert not hasattr(mtlearn._bindings, "TreeStats")
+    assert not hasattr(mtlearn._bindings, "make_tree_stats")
+    assert not hasattr(mtlearn._bindings, "make_tree_tensor")
+    assert not hasattr(mtlearn._bindings, "ConnectedFilterByJacobian")
+    assert not hasattr(mtlearn._bindings, "InfoTree")
+    assert not hasattr(mtlearn._bindings, "ConnectedFilterByMorphologicalTree")
+    assert hasattr(mtlearn, "ConnectedFilterPreprocessingTreeTensors")
+    assert hasattr(mtlearn, "ConnectedFilterPreprocessingTreeTraversal")
+    assert hasattr(mtlearn._bindings, "ConnectedFilterPreprocessingTreeTensors")
+    assert hasattr(mtlearn._bindings, "ConnectedFilterPreprocessingTreeTraversal")
+
+
+def test_build_tree_returns_weighted_tree_for_supported_types():
+    img = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+
+    for tree_type in ("max-tree", "min-tree", "tos"):
+        tree = build_tree(img, tree_type)
+
+        assert morphology.is_tree(tree)
+        assert tree.getRoot() >= 0
+
+
+def test_morphology_facade_computes_attributes_and_filters():
+    img = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+    tree = morphology.create_max_tree(img)
+
+    assert morphology.AttributeType is morphology.Attribute.Type
+    assert morphology.AttributeGroup is morphology.Attribute.Group
+
+    attr_index, attr_values = morphology.compute_attributes(
+        tree,
+        [morphology.AttributeType.AREA, morphology.AttributeGroup.TREE_TOPOLOGY],
+    )
+    single_attr = morphology.Attribute.computeSingleAttribute(
+        tree,
+        morphology.AttributeType.AREA,
+        morphology.NodeIdSpace.MORPHOLOGICAL_TREE,
+    )
+    attribute_filter = morphology.create_attribute_filter(tree)
+    filtered = attribute_filter.filteringSubtractiveRule(
+        np.ones(attr_values.shape[0], dtype=bool)
+    )
+
+    assert "AREA" in attr_index
+    assert len(attr_index) > 1
+    assert attr_values.shape[0] == single_attr.shape[0]
+    assert filtered.shape == img.shape
+
+    area_description = morphology.Attribute.describe(morphology.AttributeType.AREA)
+    all_descriptions = morphology.Attribute.describeAll()
+    assert "Area:" in area_description
+    assert all_descriptions["AREA"] == area_description
+    assert "CIRCULARITY" in all_descriptions
+    assert morphology.describe_attribute(morphology.AttributeType.AREA) == area_description
+    assert morphology.describe_all_attributes()["AREA"] == area_description
+
+
+def test_connected_filter_reconstructs_image_when_all_nodes_are_kept():
+    img = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+    expected = torch.tensor(img, dtype=torch.float32)
+
+    for tree_type in ("max-tree", "min-tree", "tos"):
+        tree = build_tree(img, tree_type)
+        residues = mtlearn.ConnectedFilterPreprocessingTreeTensors.get_residues(tree)
+        sigmoid = torch.ones_like(residues, dtype=torch.float32)
+
+        filtered = mtlearn.ConnectedFilterPreprocessingTreeTraversal.filtering(tree, sigmoid)
+
+        assert filtered.dtype == torch.float32
+        assert filtered.shape == expected.shape
+        assert torch.allclose(filtered, expected)
+
+
+def test_connected_filter_preprocessing_tree_tensors_have_consistent_shapes():
+    img = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+    tree = build_tree(img, "max-tree")
+
+    residues = mtlearn.ConnectedFilterPreprocessingTreeTensors.get_residues(tree)
+    info = mtlearn.ConnectedFilterPreprocessingTreeTensors.get_info_for_jacobian(tree)
+
+    assert residues.dtype == torch.float32
+    assert len(info) == 5
+    assert all(item.shape == residues.shape for item in info[:4])
+    assert info[4].shape == (img.size,)
+    assert not hasattr(mtlearn.ConnectedFilterPreprocessingTreeTensors, "get_jacobian_dense")
+    assert not hasattr(mtlearn.ConnectedFilterPreprocessingTreeTensors, "get_acumulated_gradient")
+
+
+def test_connected_filter_preprocessing_public_aliases():
+    assert mtlearn.layers.CFPLayer is mtlearn.layers.ConnectedFilterPreprocessingLayer
+    assert (
+        mtlearn.layers.CFPLayerWithExplicitJacobian
+        is mtlearn.layers.ConnectedFilterPreprocessingLayerWithExplicitJacobian
+    )
+    assert (
+        mtlearn.layers.CFPExplicitJacobianFunction
+        is mtlearn.layers.ConnectedFilterPreprocessingExplicitJacobianFunction
+    )
+    assert (
+        mtlearn.layers.CFPLayerWithCPUTreeTraversal
+        is mtlearn.layers.ConnectedFilterPreprocessingLayerWithCPUTreeTraversal
+    )
+    assert hasattr(mtlearn.layers, "ConnectedFilterPreprocessingImplicitJacobianFunction")
+    assert hasattr(mtlearn.layers, "ConnectedFilterPreprocessingCPUTreeTraversalFunction")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterLayerByThresholds")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterLayerWithImplicitJacobian")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterLayerWithJacobian")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterWithJacobianFunction")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterLayer")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterFunction")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterLayerBySingleThreshold")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterFunctionBySingleThreshold")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterSingleThresholdLayer")
+    assert not hasattr(mtlearn.layers, "ConnectedFilterSingleThresholdFunction")
+    assert not hasattr(mtlearn.ConnectedFilterPreprocessingTreeTraversal, "gradientsOfThreshold")
+    assert not hasattr(mtlearn.ConnectedFilterPreprocessingTreeTraversal, "gradientsOfThresholds")
+
+
+def test_connected_filter_preprocessing_layer_forward_smoke():
+    layer = mtlearn.layers.ConnectedFilterPreprocessingLayer(
+        in_channels=1,
+        attributes_spec=[(morphology.AttributeType.AREA,)],
+        tree_type="max-tree",
+        device="cpu",
+    )
+    x = torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32)
+
+    y = layer(x)
+
+    assert y.dtype == torch.float32
+    assert y.shape == x.shape
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__]))

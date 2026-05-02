@@ -304,7 +304,7 @@ The workflow rejects a tag when the tag version does not match
 The release wheel matrix currently produces 22 wheels and targets Python 3.9
 through 3.14 on:
 
-- Linux x86_64;
+- Linux manylinux x86_64;
 - Windows x86_64;
 - macOS arm64;
 - macOS Intel x86_64 for Python 3.9 through 3.12.

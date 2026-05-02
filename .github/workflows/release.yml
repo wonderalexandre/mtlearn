@@ -78,15 +78,7 @@ jobs:
 
       - name: Install build dependencies
         shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build scikit-build-core setuptools-scm pybind11
-          if python -c 'import sys; raise SystemExit(0 if sys.version_info < (3, 13) else 1)'; then
-            python -m pip install "numpy>=1.23,<2" opencv-python-headless scikit-learn
-          else
-            python -m pip install "numpy>=2.0" opencv-python-headless scikit-learn
-          fi
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+        run: python scripts/install_release_dependencies.py --build-tools
 
       - name: Build sdist
         run: python -m build --sdist --outdir dist --no-isolation
@@ -98,7 +90,57 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  build-wheels:
+  build-linux-wheels:
+    name: Linux manylinux wheels
+    needs: validate-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install cibuildwheel
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "cibuildwheel==3.3.0"
+
+      - name: Build manylinux wheels
+        env:
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_BUILD: "cp39-manylinux_x86_64 cp310-manylinux_x86_64 cp311-manylinux_x86_64 cp312-manylinux_x86_64 cp313-manylinux_x86_64 cp314-manylinux_x86_64"
+          CIBW_BUILD_FRONTEND: "pip; args: --no-build-isolation"
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_BEFORE_BUILD_LINUX: "python {package}/scripts/install_release_dependencies.py --build-tools"
+          CIBW_BEFORE_TEST_LINUX: "python {package}/scripts/install_release_dependencies.py"
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+            auditwheel repair
+            --exclude libc10.so
+            --exclude libtorch.so
+            --exclude libtorch_cpu.so
+            --exclude libtorch_python.so
+            -w {dest_dir} {wheel}
+          CIBW_TEST_COMMAND: "python {package}/scripts/smoke_test_release.py --expected-version ${{ needs.validate-version.outputs.package-version }}"
+        run: python -m cibuildwheel --platform linux --output-dir dist
+
+      - name: Upload Linux wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-wheel-linux-manylinux-x86_64
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-native-wheels:
     name: Wheel (${{ matrix.os }}, Python ${{ matrix.python-version }})
     needs: validate-version
     runs-on: ${{ matrix.os }}
@@ -108,7 +150,6 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
           - windows-latest
           - macos-latest
           - macos-15-intel
@@ -147,19 +188,7 @@ jobs:
 
       - name: Install build dependencies
         shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build scikit-build-core setuptools-scm pybind11
-          if python -c 'import sys; raise SystemExit(0 if sys.version_info < (3, 13) else 1)'; then
-            python -m pip install "numpy>=1.23,<2" opencv-python-headless scikit-learn
-          else
-            python -m pip install "numpy>=2.0" opencv-python-headless scikit-learn
-          fi
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          else
-            python -m pip install torch
-          fi
+        run: python scripts/install_release_dependencies.py --build-tools
 
       - name: Build wheel
         env:
@@ -176,35 +205,9 @@ jobs:
             venv_python=".venv-release/bin/python"
           fi
           "${venv_python}" -m pip install --upgrade pip
+          "${venv_python}" scripts/install_release_dependencies.py
           "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
-          "${venv_python}" - <<'PY'
-          import numpy as np
-          import torch
-
-          import mtlearn
-          from mtlearn import morphology
-          from mtlearn.layers import ConnectedFilterPreprocessingLayer
-
-          image = np.array([[1, 2], [3, 4]], dtype=np.uint8)
-          tree = morphology.create_max_tree(image)
-          attr_index, attr_values = morphology.compute_attributes(
-              tree,
-              [morphology.AttributeType.AREA],
-          )
-          assert mtlearn.__version__ == "${{ needs.validate-version.outputs.package-version }}"
-          assert attr_index["AREA"] == 0
-          assert attr_values.shape[0] == tree.numInternalNodeSlots
-
-          layer = ConnectedFilterPreprocessingLayer(
-              in_channels=1,
-              attributes_spec=[(morphology.AttributeType.AREA,)],
-              tree_type="max-tree",
-              device="cpu",
-              scale_mode="none",
-          )
-          y = layer(torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32))
-          assert y.shape == (1, 1, 2, 2)
-          PY
+          "${venv_python}" scripts/smoke_test_release.py --expected-version "${{ needs.validate-version.outputs.package-version }}"
 
       - name: Upload wheel
         uses: actions/upload-artifact@v7
@@ -217,7 +220,8 @@ jobs:
     name: Check distributions
     needs:
       - build-sdist
-      - build-wheels
+      - build-linux-wheels
+      - build-native-wheels
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -273,6 +277,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install twine
+          python - <<'PY'
+          from pathlib import Path
+
+          bad = []
+          for wheel in sorted(Path("dist").glob("*.whl")):
+              platform_tag = wheel.stem.rsplit("-", 1)[-1]
+              if platform_tag.startswith("linux_"):
+                  bad.append(wheel.name)
+
+          if bad:
+              raise SystemExit(
+                  "Linux wheels must use manylinux or musllinux platform tags: "
+                  + ", ".join(bad)
+              )
+          PY
           python -m twine check dist/*
 
   github-release:
@@ -307,7 +326,11 @@ jobs:
         shell: bash
         run: |
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release upload "${TAG_NAME}" dist/* --clobber
+            gh release view "${TAG_NAME}" --json assets --jq '.assets[].name' |
+              while IFS= read -r asset_name; do
+                gh release delete-asset "${TAG_NAME}" "${asset_name}" --yes
+              done
+            gh release upload "${TAG_NAME}" dist/*
           else
             gh release create "${TAG_NAME}" dist/* --verify-tag --title "${TAG_NAME}" --generate-notes
           fi

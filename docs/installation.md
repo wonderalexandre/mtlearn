@@ -282,3 +282,32 @@ python -m build --wheel --no-isolation
 python -m pip install dist/mtlearn-*.whl
 python scripts/validate_notebooks.py --installed-package
 ```
+
+## Release Process
+
+Releases are built by GitHub Actions, but PyPI publication is manual.
+
+For a production release:
+
+1. Make sure the `CI`, `Package`, and `Notebooks` workflows are green on
+   `main`.
+2. Update `pyproject.toml` if the release version is changing.
+3. Create and push a semantic version tag matching the package version, for
+   example `v1.0.0`.
+4. The `Release` workflow builds the source distribution and supported platform
+   wheels, checks the package metadata, and attaches the artifacts to a GitHub
+   Release.
+
+The workflow rejects a tag when the tag version does not match
+`pyproject.toml`.
+
+PyPI upload is intentionally manual. Download the release artifacts from the
+GitHub Release or from the workflow run, then publish them with:
+
+```bash
+python -m pip install --upgrade twine
+python -m twine upload dist/*
+```
+
+Manual runs of the `Release` workflow build downloadable artifacts without
+creating a GitHub Release.

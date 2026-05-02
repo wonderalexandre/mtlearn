@@ -1,0 +1,281 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    outputs:
+      package-version: ${{ steps.version.outputs.package-version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate tag and package version
+        id: version
+        shell: bash
+        run: |
+          package_version="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          metadata = tomllib.loads(Path("pyproject.toml").read_text())
+          print(metadata["project"]["version"])
+          PY
+          )"
+          echo "package-version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "${tag_version}" != "${package_version}" ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match pyproject.toml version ${package_version}."
+              exit 1
+            fi
+          fi
+
+  build-sdist:
+    name: Source distribution
+    needs: validate-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build scikit-build-core setuptools-scm pybind11
+          python -m pip install numpy opencv-python-headless scikit-learn
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Build sdist
+        run: python -m build --sdist --outdir dist --no-isolation
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  build-wheels:
+    name: Wheel (${{ matrix.os }})
+    needs: validate-version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build scikit-build-core setuptools-scm pybind11
+          python -m pip install numpy opencv-python-headless scikit-learn
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          else
+            python -m pip install torch
+          fi
+
+      - name: Build wheel
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: python -m build --wheel --outdir dist --no-isolation
+
+      - name: Install wheel and run smoke test
+        shell: bash
+        run: |
+          python -m venv --system-site-packages .venv-release
+          .venv-release/bin/python -m pip install --upgrade pip
+          .venv-release/bin/python -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
+          .venv-release/bin/python - <<'PY'
+          import numpy as np
+          import torch
+
+          import mtlearn
+          from mtlearn import morphology
+          from mtlearn.layers import ConnectedFilterPreprocessingLayer
+
+          image = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+          tree = morphology.create_max_tree(image)
+          attr_index, attr_values = morphology.compute_attributes(
+              tree,
+              [morphology.AttributeType.AREA],
+          )
+          assert mtlearn.__version__ == "${{ needs.validate-version.outputs.package-version }}"
+          assert attr_index["AREA"] == 0
+          assert attr_values.shape[0] == tree.numInternalNodeSlots
+
+          layer = ConnectedFilterPreprocessingLayer(
+              in_channels=1,
+              attributes_spec=[(morphology.AttributeType.AREA,)],
+              tree_type="max-tree",
+              device="cpu",
+              scale_mode="none",
+          )
+          y = layer(torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32))
+          assert y.shape == (1, 1, 2, 2)
+          PY
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-wheel-${{ matrix.os }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  check-distributions:
+    name: Check distributions
+    needs:
+      - build-sdist
+      - build-wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Inspect sdist contents
+        shell: bash
+        run: |
+          python - <<'PY'
+          import tarfile
+          from pathlib import Path
+
+          archives = sorted(Path("dist").glob("mtlearn-*.tar.gz"))
+          if len(archives) != 1:
+              raise SystemExit(f"expected one sdist, found {archives}")
+
+          forbidden = (
+              "notebooks/",
+              "dat/",
+              "__pycache__",
+              ".ipynb_checkpoints",
+              "backend-internalization",
+              "public-snapshot-checklist",
+              "connected-filter-preprocessing",
+              "research-roadmap",
+          )
+          with tarfile.open(archives[0]) as tf:
+              names = sorted(tf.getnames())
+
+          leaked = {
+              pattern: [name for name in names if pattern in name]
+              for pattern in forbidden
+          }
+          leaked = {pattern: matches for pattern, matches in leaked.items() if matches}
+          if leaked:
+              raise SystemExit(f"sdist contains forbidden files: {leaked}")
+          print(f"checked {archives[0]} with {len(names)} entries")
+          PY
+
+      - name: Check package metadata
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install twine
+          python -m twine check dist/*
+
+  github-release:
+    name: GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - validate-version
+      - check-distributions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" dist/* --clobber
+          else
+            gh release create "${TAG_NAME}" dist/* --verify-tag --title "${TAG_NAME}" --generate-notes
+          fi

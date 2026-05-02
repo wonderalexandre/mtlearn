@@ -38,6 +38,7 @@ Issues = "https://github.com/wonderalexandre/mtlearn/issues"
 [project.optional-dependencies]
 notebooks = [
   "ipykernel",
+  "matplotlib",
   "nbformat>=5",
   "papermill>=2.4"
 ]

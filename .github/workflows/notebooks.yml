@@ -49,7 +49,7 @@ jobs:
           else
             python -m pip install torch
           fi
-          python -m pip install ipykernel nbformat papermill
+          python -m pip install ipykernel matplotlib nbformat papermill
 
       - name: Locate CMake package prefixes
         id: cmake-prefix

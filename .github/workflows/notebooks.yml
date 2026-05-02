@@ -1,6 +1,17 @@
 name: Notebooks
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/notebooks.yml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "external/MorphologicalAttributeFilters"
+      - "mtlearn/**"
+      - "notebooks/**"
+      - "pyproject.toml"
+      - "scripts/validate_notebooks.py"
   workflow_dispatch:
   schedule:
     - cron: "17 6 * * 1"

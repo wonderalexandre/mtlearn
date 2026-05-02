@@ -1,5 +1,8 @@
 # mtlearn
 
+[![CI](https://github.com/wonderalexandre/mtlearn/actions/workflows/ci.yml/badge.svg)](https://github.com/wonderalexandre/mtlearn/actions/workflows/ci.yml)
+[![Package](https://github.com/wonderalexandre/mtlearn/actions/workflows/package.yml/badge.svg)](https://github.com/wonderalexandre/mtlearn/actions/workflows/package.yml)
+
 `mtlearn` is a C++/Python research library for learnable connected operators
 based on morphological trees.
 

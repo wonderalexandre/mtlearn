@@ -25,6 +25,9 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
+  "numpy>=1.23",
+  "opencv-python-headless>=4.8",
+  "scikit-learn>=1.2",
   "torch>=2.0"
 ]
 

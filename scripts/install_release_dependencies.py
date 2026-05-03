@@ -35,30 +35,41 @@ def minimum_torch_version() -> str:
 
 
 def version_tuple(version: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in version.split("."))
+    public_version = version.split("+", 1)[0]
+    return tuple(int(part) for part in public_version.split("."))
 
 
-def torch_requirement(mode: str) -> str | None:
+def torch_requirement(mode: str, explicit_version: str | None = None) -> str | None:
     """Return the Torch requirement used by the requested install mode."""
 
     if mode == "none":
         return None
+    if explicit_version is not None:
+        version = explicit_version
+        if sys.platform.startswith("linux"):
+            if "+" not in version:
+                version = f"{version}+cpu"
+            return f"torch=={version}"
+        return f"torch=={version}"
     if mode == "latest":
         return "torch"
 
     version = minimum_torch_version()
     if sys.platform.startswith("linux"):
-        return f"torch=={version}+cpu"
+        if "+" not in version:
+            version = f"{version}+cpu"
+        return f"torch=={version}"
     return f"torch=={version}"
 
 
-def needs_legacy_numpy(torch_mode: str) -> bool:
+def needs_legacy_numpy(torch_mode: str, explicit_torch_version: str | None) -> bool:
     """Return whether this runner should avoid NumPy 2 during dependency setup."""
 
-    if (
-        torch_mode == "minimum"
-        and version_tuple(minimum_torch_version()) < (2, 4)
-    ):
+    selected_version = explicit_torch_version
+    if selected_version is None and torch_mode == "minimum":
+        selected_version = minimum_torch_version()
+
+    if selected_version is not None and version_tuple(selected_version) < (2, 4):
         return True
 
     return (
@@ -68,8 +79,12 @@ def needs_legacy_numpy(torch_mode: str) -> bool:
     )
 
 
-def numpy_requirement(torch_mode: str, force_legacy: bool = False) -> str:
-    if force_legacy or needs_legacy_numpy(torch_mode):
+def numpy_requirement(
+    torch_mode: str,
+    force_legacy: bool = False,
+    explicit_torch_version: str | None = None,
+) -> str:
+    if force_legacy or needs_legacy_numpy(torch_mode, explicit_torch_version):
         return "numpy>=1.23,<2"
     return "numpy>=1.23"
 
@@ -84,16 +99,20 @@ def install_build_tools() -> None:
     )
 
 
-def install_runtime_dependencies(torch_mode: str, force_legacy_numpy: bool) -> None:
+def install_runtime_dependencies(
+    torch_mode: str,
+    force_legacy_numpy: bool,
+    explicit_torch_version: str | None,
+) -> None:
     run_pip(
         "install",
-        numpy_requirement(torch_mode, force_legacy_numpy),
+        numpy_requirement(torch_mode, force_legacy_numpy, explicit_torch_version),
         "opencv-python-headless",
     )
 
 
-def install_torch(torch_mode: str) -> None:
-    requirement = torch_requirement(torch_mode)
+def install_torch(torch_mode: str, explicit_version: str | None) -> None:
+    requirement = torch_requirement(torch_mode, explicit_version)
     if requirement is None:
         return
 
@@ -127,7 +146,17 @@ def parse_args() -> argparse.Namespace:
             "newest compatible Torch, and 'none' skips Torch installation."
         ),
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--torch-version",
+        help=(
+            "Install an explicit Torch version. On Linux, '+cpu' is added "
+            "automatically when the version has no local suffix."
+        ),
+    )
+    args = parser.parse_args()
+    if args.torch_version and args.torch == "none":
+        parser.error("--torch-version cannot be combined with --torch none")
+    return args
 
 
 def main() -> int:
@@ -135,8 +164,8 @@ def main() -> int:
     run_pip("install", "--upgrade", "pip")
     if args.build_tools:
         install_build_tools()
-    install_runtime_dependencies(args.torch, args.legacy_numpy)
-    install_torch(args.torch)
+    install_runtime_dependencies(args.torch, args.legacy_numpy, args.torch_version)
+    install_torch(args.torch, args.torch_version)
     return 0
 
 

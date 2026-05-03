@@ -81,3 +81,101 @@ jobs:
         run: |
           python -m compileall -q mtlearn/python/mtlearn mtlearn/tests/python
           git diff --check
+
+  torch-runtime-compatibility:
+    name: Torch runtime compatibility (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install build dependencies with minimum Torch
+        shell: bash
+        run: |
+          python scripts/install_release_dependencies.py --build-tools --torch-version 2.10.0
+
+      - name: Build wheel against minimum Torch
+        run: python -m build --wheel --outdir dist --no-isolation
+
+      - name: Test wheel against supported Torch versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          metadata = tomllib.loads(Path("pyproject.toml").read_text())
+          print(metadata["project"]["version"])
+          PY
+          )"
+
+          required_torch_versions=(2.10.0 2.11.0)
+          candidate_torch_versions=(2.12.0)
+          tested_torch_versions=()
+
+          test_torch_version() {
+            local torch_version="$1"
+            local required="$2"
+
+            echo "::group::Torch ${torch_version}"
+            venv_dir=".venv-torch-${torch_version}"
+            python -m venv "${venv_dir}"
+            venv_python="${venv_dir}/bin/python"
+            "${venv_python}" -m pip install --upgrade pip
+
+            set +e
+            "${venv_python}" scripts/install_release_dependencies.py --torch-version "${torch_version}" \
+              2>&1 | tee "${venv_dir}-install.log"
+            install_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [[ "${install_status}" -ne 0 ]]; then
+              if grep -q "No matching distribution found" "${venv_dir}-install.log" && [[ "${required}" == "false" ]]; then
+                echo "::notice::Torch ${torch_version} is not available for this runner yet; skipping candidate compatibility test."
+                echo "::endgroup::"
+                return 0
+              fi
+              echo "::error::Failed to install Torch ${torch_version}."
+              echo "::endgroup::"
+              return "${install_status}"
+            fi
+
+            "${venv_python}" -m pip install pytest
+            "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
+            "${venv_python}" scripts/smoke_test_release.py --expected-version "${package_version}"
+            (
+              cd /tmp
+              "${GITHUB_WORKSPACE}/${venv_python}" -m pytest -q \
+                "${GITHUB_WORKSPACE}/mtlearn/tests/python/test_bindings.py" \
+                "${GITHUB_WORKSPACE}/mtlearn/tests/python/test_cfp_deterministic.py"
+            )
+            tested_torch_versions+=("${torch_version}")
+            echo "::endgroup::"
+          }
+
+          for torch_version in "${required_torch_versions[@]}"; do
+            test_torch_version "${torch_version}" true
+          done
+
+          for torch_version in "${candidate_torch_versions[@]}"; do
+            test_torch_version "${torch_version}" false
+          done
+
+          echo "Tested Torch versions: ${tested_torch_versions[*]}"

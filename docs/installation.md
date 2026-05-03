@@ -38,14 +38,14 @@ newest available 2.2.x line for the supported Python versions.
 | --- | --- | --- |
 | macOS Intel | 3.9 through 3.12 | `torch>=2.2.2,<2.3` |
 | macOS arm64 | 3.9 | `torch>=2.8,<2.9` |
-| macOS arm64 | 3.10 through 3.13 | `torch>=2.10,<2.11` |
+| macOS arm64 | 3.10 through 3.13 | `torch>=2.10,<2.12` |
 | macOS arm64 | 3.14 | `torch>=2.11,<2.12` |
 | Linux and Windows | 3.9 | `torch>=2.8,<2.9` |
-| Linux and Windows | 3.10 through 3.13 | `torch>=2.10,<2.11` |
+| Linux and Windows | 3.10 through 3.13 | `torch>=2.10,<2.12` |
 | Linux and Windows | 3.14 | `torch>=2.11,<2.12` |
 
-Release wheels are built against the lower bound for each row and smoke-tested
-against the installed LibTorch runtime before upload.
+Release wheels are built against the lower bound for each row. CI also tests
+the generated wheel against supported newer Torch runtimes before upload.
 
 ## Notebook Dependencies
 

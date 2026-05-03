@@ -132,9 +132,10 @@ remain available for gradient checks, comparisons, and debugging.
 User code should interact with morphology through the public Python facade
 `mtlearn.morphology`, rather than depending on backend-specific APIs.
 
-The backend is `MorphologicalAttributeFilters` / `mmcfilters`, but the top-level
-Python package `mmcfilters` is not required as a runtime dependency of
-`mtlearn`.
+The backend is
+[`MorphologicalAttributeFilters`](https://github.com/wonderalexandre/MorphologicalAttributeFilters)
+/ `mmcfilters`, but the top-level Python package `mmcfilters` is not required
+as a runtime dependency of `mtlearn`.
 
 ## Current Scope
 

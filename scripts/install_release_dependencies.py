@@ -30,7 +30,7 @@ def minimum_torch_version() -> str:
     if sys.version_info >= (3, 14):
         return "2.11.0"
     if sys.version_info >= (3, 10):
-        return "2.9.0"
+        return "2.10.0"
     return "2.8.0"
 
 

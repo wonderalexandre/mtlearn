@@ -209,21 +209,6 @@ jobs:
           "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
           "${venv_python}" scripts/smoke_test_release.py --expected-version "${{ needs.validate-version.outputs.package-version }}"
 
-      - name: Install wheel and run smoke test with latest Torch
-        if: matrix.python-version == '3.12'
-        shell: bash
-        run: |
-          python -m venv .venv-release-latest
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            venv_python=".venv-release-latest/Scripts/python.exe"
-          else
-            venv_python=".venv-release-latest/bin/python"
-          fi
-          "${venv_python}" -m pip install --upgrade pip
-          "${venv_python}" scripts/install_release_dependencies.py --torch latest
-          "${venv_python}" -m pip install --no-deps --force-reinstall dist/mtlearn-*.whl
-          "${venv_python}" scripts/smoke_test_release.py --expected-version "${{ needs.validate-version.outputs.package-version }}"
-
       - name: Upload wheel
         uses: actions/upload-artifact@v7
         with:

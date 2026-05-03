@@ -31,7 +31,7 @@ pip install mtlearn
 NumPy below 2, which avoids downgrading the default NumPy stack in environments
 such as Google Colab.
 
-The native `_mtlearn` extension links against LibTorch. Version 1.0.3 and newer
+The native `_mtlearn` extension links against LibTorch. Version 1.0.4 and newer
 therefore declare tested PyTorch ranges per Python version and platform instead
 of one broad unqualified requirement. PyTorch no longer publishes recent macOS
 Intel wheels, so that platform intentionally uses the newest available 2.2.x
@@ -41,10 +41,10 @@ line for the supported Python versions.
 | --- | --- | --- |
 | macOS Intel | 3.9 through 3.12 | `torch>=2.2.2,<2.3` |
 | macOS arm64 | 3.9 | `torch>=2.8,<2.9` |
-| macOS arm64 | 3.10 through 3.13 | `torch>=2.9,<2.12` |
+| macOS arm64 | 3.10 through 3.13 | `torch>=2.10,<2.11` |
 | macOS arm64 | 3.14 | `torch>=2.11,<2.12` |
 | Linux and Windows | 3.9 | `torch>=2.8,<2.9` |
-| Linux and Windows | 3.10 through 3.13 | `torch>=2.9,<2.12` |
+| Linux and Windows | 3.10 through 3.13 | `torch>=2.10,<2.11` |
 | Linux and Windows | 3.14 | `torch>=2.11,<2.12` |
 
 Release wheels are built against the lower bound for each row and smoke-tested

@@ -1,10 +1,11 @@
-# mtlearn
+# MTLearn
 
-[![CI](https://github.com/wonderalexandre/mtlearn/actions/workflows/ci.yml/badge.svg)](https://github.com/wonderalexandre/mtlearn/actions/workflows/ci.yml)
-[![Package](https://github.com/wonderalexandre/mtlearn/actions/workflows/package.yml/badge.svg)](https://github.com/wonderalexandre/mtlearn/actions/workflows/package.yml)
+[![CI](https://github.com/wonderalexandre/MTLearn/actions/workflows/ci.yml/badge.svg)](https://github.com/wonderalexandre/MTLearn/actions/workflows/ci.yml)
+[![Package](https://github.com/wonderalexandre/MTLearn/actions/workflows/package.yml/badge.svg)](https://github.com/wonderalexandre/MTLearn/actions/workflows/package.yml)
 
-`mtlearn` is a C++/Python research library for learnable connected operators
-based on morphological trees.
+**MTLearn** (*Morphological Tree Learning*) is a C++/Python research library for
+learnable connected operators based on morphological trees. The Python package
+is published as `mtlearn`.
 
 The library explores a simple idea: connected morphology can become a structural
 prior for deep neural networks. Instead of processing images only through local
@@ -16,7 +17,7 @@ Classical connected filters are powerful, but they usually depend on hard
 keep/discard decisions and manually selected attribute thresholds. This limits
 their integration into end-to-end trainable neural architectures.
 
-`mtlearn` provides a stable implementation platform for this research direction.
+**MTLearn** provides a stable implementation platform for this research direction.
 It currently includes Connected Filter Preprocessing (CFP), and is intended to
 grow toward trainable connected-operator layers, differentiable or learnable
 attribute criteria, self-dual tree representations, intermediate network
@@ -41,14 +42,15 @@ insertions, and scalable implementations.
 
 ## Install
 
-From PyPI:
+The Python package is available from PyPI as `mtlearn`:
 
 ```bash
 pip install mtlearn
 ```
 
-See [docs/installation.md](docs/installation.md) for source builds, CMake
-configuration, public API notes, validation, and release checks.
+See [docs/installation.md](docs/installation.md) for installation instructions
+and [docs/development.md](docs/development.md) for source builds, validation,
+and releases.
 
 ## Quick Start
 
@@ -92,6 +94,22 @@ y = cfp_layer(x)
 assert y.shape == x.shape
 ```
 
+## Examples and Notebooks
+
+Executable examples are available in `notebooks/`.
+
+Install notebook dependencies with:
+
+```bash
+pip install "mtlearn[notebooks]"
+```
+
+The main public experiment example is:
+
+```text
+notebooks/experiments/Example_screws_filtering.ipynb
+```
+
 ## Implementation Notes
 
 `ConnectedFilterPreprocessingLayer` is the recommended implementation for new
@@ -110,34 +128,21 @@ explicit region-pixel Jacobian construction.
 Reference implementations based on explicit Jacobians and CPU tree traversals
 remain available for gradient checks, comparisons, and debugging.
 
-## Backend Notes
-
-`mtlearn` uses a C++ morphology backend internally through `mtlearn::morphology`.
+**MTLearn** uses a C++ morphology backend internally through `mtlearn::morphology`.
 User code should interact with morphology through the public Python facade
 `mtlearn.morphology`, rather than depending on backend-specific APIs.
 
-The current backend is `MorphologicalAttributeFilters` / `mmcfilters v1.0.0`,
-but the top-level Python package `mmcfilters` is not required as a runtime
-dependency of `mtlearn`.
+The backend is `MorphologicalAttributeFilters` / `mmcfilters`, but the top-level
+Python package `mmcfilters` is not required as a runtime dependency of
+`mtlearn`.
 
 ## Current Scope
 
-`mtlearn` is currently a research-oriented library. The public API is intended
-to remain stable where possible, but some components may evolve as the project
-moves toward broader trainable connected-operator layers.
-
-The current implementation supports:
-
-- max-tree and min-tree CFP workflows through `mtlearn.morphology`;
-- multi-attribute groups;
-- dataset-level attribute normalization;
-- cached preprocessing for indexed training datasets;
-- PyTorch forward and backward for CFP parameters on CPU or CUDA tensors;
-- gradcheck notebooks and CTest integration.
-
-The current CFP layer does not yet represent the full research agenda of
-`mtlearn`. It is the first validated member of a broader planned family of
-trainable connected-operator layers.
+**MTLearn** is a research-oriented library. CFP is the first validated member of
+a broader planned family of trainable connected-operator layers. The current
+implementation supports max-tree and min-tree CFP workflows, multi-attribute
+groups, dataset-level attribute normalization, cached preprocessing, and
+PyTorch forward/backward for CFP parameters on CPU or CUDA tensors.
 
 ## Citation
 

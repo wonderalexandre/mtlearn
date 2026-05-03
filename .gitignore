@@ -15,11 +15,11 @@ htmlcov/
 .vscode/
 anaconda_projects/
 /dat/
+/notebooks/icpr2016/
 /notebooks/.ipynb_checkpoints
 python/mtlearn/.DS_Store
 notebooks/.ipynb_checkpoints/AreaOpening-checkpoint.ipynb
 environment_.yml
-notebooks/paper/out_plants_cnn/.DS_Store
 notebooks/paper/.ipynb_checkpoints/Modelos-checkpoint.ipynb
 notebooks/icpr/.DS_Store
 notebooks/icpr/.ipynb_checkpoints/Modelos-checkpoint.ipynb

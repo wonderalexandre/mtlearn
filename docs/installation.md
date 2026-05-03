@@ -1,25 +1,10 @@
-# Installation, Public API, and Development
+# MTLearn Installation
 
-This page documents installation paths, public APIs, source builds, tests,
-notebook validation, and release checks for `mtlearn`.
+This page covers installation paths for **MTLearn**. The published Python
+package and import namespace remain `mtlearn`.
 
-## Requirements
-
-For the prebuilt Python package, a recent Python environment with `pip` is
-usually sufficient.
-
-For source builds, you need a working native build environment, including:
-
-- Python;
-- a C++ compiler supported by CMake;
-- CMake;
-- PyTorch;
-- pybind11;
-- scikit-build-core.
-
-The project uses a native `_mtlearn` extension, so source builds require a C++
-build toolchain. Python bindings currently expose Torch tensors, so building the
-Python extension also requires Torch support.
+For source builds, tests, notebook validation, and releases, see
+[development.md](development.md).
 
 ## Install From PyPI
 
@@ -27,19 +12,27 @@ Python extension also requires Torch support.
 pip install mtlearn
 ```
 
-`mtlearn` supports NumPy 1.x and 2.x. Version 1.0.1 and newer do not force
-NumPy below 2, which avoids downgrading the default NumPy stack in environments
-such as Google Colab.
+Verify the installation:
 
-Version 1.0.5 and newer also avoid importing or installing `scikit-learn` for
-the base package. This keeps `import mtlearn` isolated from existing
-`scipy`/`scikit-learn` binaries in environments that already moved to NumPy 2.
+```bash
+python - <<'PY'
+import mtlearn
+from mtlearn import morphology
 
-The native `_mtlearn` extension links against LibTorch. Version 1.0.4 and newer
-therefore declare tested PyTorch ranges per Python version and platform instead
-of one broad unqualified requirement. PyTorch no longer publishes recent macOS
-Intel wheels, so that platform intentionally uses the newest available 2.2.x
-line for the supported Python versions.
+print(mtlearn.__version__)
+print(morphology.AttributeType.AREA)
+PY
+```
+
+## Runtime Dependency Notes
+
+The `mtlearn` package supports NumPy 1.x and 2.x and does not depend on
+`scikit-learn` at runtime.
+
+The native `_mtlearn` extension links against LibTorch, so the package declares
+tested PyTorch ranges per Python version and platform. PyTorch no longer
+publishes recent macOS Intel wheels, so that platform intentionally uses the
+newest available 2.2.x line for the supported Python versions.
 
 | Platform | Python | PyTorch requirement |
 | --- | --- | --- |
@@ -54,10 +47,19 @@ line for the supported Python versions.
 Release wheels are built against the lower bound for each row and smoke-tested
 against the installed LibTorch runtime before upload.
 
-For notebooks:
+## Notebook Dependencies
+
+Install the notebook extras when you want to run the public examples:
 
 ```bash
 pip install "mtlearn[notebooks]"
+```
+
+Notebook files are not installed with the PyPI package. Clone the repository to
+run the public notebooks. The main public experiment example is:
+
+```text
+notebooks/experiments/Example_screws_filtering.ipynb
 ```
 
 ## Source Checkout
@@ -65,8 +67,8 @@ pip install "mtlearn[notebooks]"
 Clone with submodules:
 
 ```bash
-git clone --recurse-submodules https://github.com/wonderalexandre/mtlearn.git
-cd mtlearn
+git clone --recurse-submodules https://github.com/wonderalexandre/MTLearn.git
+cd MTLearn
 ```
 
 If the repository was cloned without submodules:
@@ -94,259 +96,8 @@ For notebooks from a source checkout:
 pip install -e ".[notebooks]"
 ```
 
-## Wheel Build
-
-```bash
-python scripts/install_release_dependencies.py --build-tools
-python -m build --wheel
-python -m pip install dist/mtlearn-*.whl
-```
-
-The Python package uses the native `_mtlearn` extension. The top-level
-`mmcfilters` Python package is not a runtime dependency of `mtlearn`.
-
-## Public Python API
-
-High-level modules:
-
-- `mtlearn.morphology`: tree construction, attributes, and attribute filters;
-- `mtlearn.layers`: trainable connected-layer implementations;
-- `mtlearn.datasets`: dataset classes used by examples and notebooks;
-- `mtlearn.data`: public dataset registry and download helpers.
-
-Low-level binding helpers such as
-`mtlearn.ConnectedFilterPreprocessingTreeTensors` and
-`mtlearn.ConnectedFilterPreprocessingTreeTraversal` remain available for gradchecks,
-reference implementations, and debugging. These helpers are not the recommended
-entry point for new user code; new code should prefer the high-level modules
-above.
-
-### Morphology Facade
-
-```python
-from mtlearn import morphology
-
-tree = morphology.create_max_tree(image)
-tree = morphology.create_min_tree(image)
-tree = morphology.create_tree_of_shapes(image)
-tree = morphology.build_tree(image, "max-tree")
-```
-
-The public tree aliases are:
-
-- `morphology.Tree`
-- `morphology.WeightedTree`
-- `morphology.WeightedMorphologicalTree`
-
-Prefer `morphology.Tree` or `morphology.WeightedTree` in new code. The
-`WeightedMorphologicalTree` name remains available for backend-oriented tests
-and compatibility with current bindings.
-
-Attributes and filters:
-
-```python
-Type = morphology.AttributeType
-Group = morphology.AttributeGroup
-Space = morphology.NodeIdSpace
-
-_, attributes = morphology.compute_attributes(
-    tree,
-    [Type.AREA, Type.COMPACTNESS],
-)
-
-single = morphology.compute_single_attribute(tree, Type.AREA)
-attribute_filter = morphology.create_attribute_filter(tree)
-
-area_description = morphology.describe_attribute(Type.AREA)
-all_descriptions = morphology.describe_all_attributes()
-```
-
-### Layers
-
-The main public layer is:
-
-```python
-from mtlearn.layers import ConnectedFilterPreprocessingLayer
-```
-
-Alias:
-
-```python
-from mtlearn.layers import CFPLayer
-```
-
-Reference implementations:
-
-- `ConnectedFilterPreprocessingLayerWithExplicitJacobian`
-- `ConnectedFilterPreprocessingLayerWithCPUTreeTraversal`
-
-Autograd functions are exported for tests and research notebooks, but most user
-code should instantiate the layer classes instead.
-
-## Public C++ API
-
-The public C++ weighted-tree type is:
-
-```cpp
-mtlearn::morphology::WeightedTree
-```
-
-It wraps the current backend so C++ consumers do not depend directly on
-`mmcfilters::WeightedMorphologicalTree`. The public header
-`mtlearn/morphology.hpp` owns the public morphology enums and does not include
-`mmcfilters` headers.
-
-Installed consumers should link only against:
-
-```cmake
-find_package(mtlearn CONFIG REQUIRED)
-target_link_libraries(my_target PRIVATE mtlearn::core)
-```
-
-## Development Builds
-
-### Minimum C++-Only Build
-
-```bash
-cmake -S . -B build-cpp \
-      -DMTLEARN_BUILD_PYTHON=OFF \
-      -DMTLEARN_WITH_TORCH=OFF
-cmake --build build-cpp
-```
-
-### C++/Python Test Build
-
-```bash
-cmake -S . -B build \
-      -DMTLEARN_BUILD_TESTS=ON \
-      -DMTLEARN_BUILD_PYTHON=ON \
-      -DMTLEARN_WITH_TORCH=ON \
-      -DMTLEARN_ENABLE_EMBED=OFF \
-      -DPYTHON_EXECUTABLE=$(python -c "import sys; print(sys.executable)") \
-      -DCMAKE_PREFIX_PATH="$(python -c 'import torch, pybind11; print(torch.utils.cmake_prefix_path + ";" + pybind11.get_cmake_dir())')"
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-The `CMAKE_PREFIX_PATH` expression locates both LibTorch and pybind11 from the
-active Python environment.
-
-`MTLEARN_ENABLE_EMBED=ON` activates the embedded-interpreter path in
-`mtl_interpreter_test`. Before enabling it, verify that the selected environment
-can import PyTorch:
-
-```bash
-python -c "import torch"
-```
-
-### CMake Options
-
-- `MTLEARN_BUILD_PYTHON`: build the `_mtlearn` pybind11 extension. Default: `ON`.
-- `MTLEARN_BUILD_TESTS`: build and register tests. Default: `OFF`.
-- `MTLEARN_WITH_TORCH`: enable LibTorch-dependent code. Default: `ON`.
-- `MTLEARN_ENABLE_EMBED`: enable embedded Python interpreter test behaviour.
-  Default: `OFF`.
-- `MTLEARN_ENABLE_ASSERTS`: keep runtime assertions enabled in core C++ code.
-  Default: `OFF`.
-
-`MTLEARN_BUILD_PYTHON=ON` currently requires `MTLEARN_WITH_TORCH=ON` because the
-bindings expose Torch tensors.
-
-## Validation
-
-### Direct Python Tests
-
-```bash
-pip install -e ".[test]"
-PYTHONPATH=mtlearn/python:build/mtlearn/bindings python -m pytest -q -m "not gradcheck" mtlearn/tests/python
-PYTHONPATH=mtlearn/python:build/mtlearn/bindings python -m pytest -q -m gradcheck mtlearn/tests/python
-```
-
-Whitespace and syntax checks:
-
-```bash
-python -m compileall -q mtlearn/python/mtlearn mtlearn/tests/python
-git diff --check
-```
-
-### Notebook Validation
-
-From a source checkout with a local CMake build:
-
-```bash
-pip install -e ".[notebooks]"
-python scripts/validate_notebooks.py --bindings-dir build/mtlearn/bindings
-```
-
-The script executes the full gradcheck notebooks and creates reduced temporary
-smoke copies for long experiment notebooks. Source notebooks are not modified.
-By default, executed outputs are written to:
-
-```text
-/tmp/mtlearn-notebook-validation
-```
-
-To validate against an installed wheel instead of the checkout:
-
-```bash
-python scripts/validate_notebooks.py --installed-package
-```
-
-## Clean-Clone Release Checklist
-
-Before publishing from the public repository:
-
-```bash
-git clone --recurse-submodules https://github.com/wonderalexandre/mtlearn.git
-cd mtlearn
-cmake -S . -B build-cpp \
-      -DMTLEARN_BUILD_PYTHON=OFF \
-      -DMTLEARN_WITH_TORCH=OFF \
-      -DMTLEARN_BUILD_TESTS=ON
-cmake --build build-cpp --parallel
-ctest --test-dir build-cpp --output-on-failure
-python scripts/install_release_dependencies.py --build-tools
-python -m build --wheel --no-isolation
-python -m pip install dist/mtlearn-*.whl
-python scripts/validate_notebooks.py --installed-package
-```
-
-## Release Process
-
-Releases are built by GitHub Actions, but PyPI publication is manual.
-
-For a production release:
-
-1. Make sure the `CI`, `Package`, and `Notebooks` workflows are green on
-   `main`.
-2. Update `pyproject.toml` if the release version is changing.
-3. Create and push a semantic version tag matching the package version, for
-   example `v1.0.0`.
-4. The `Release` workflow builds the source distribution and supported platform
-   wheels, checks the package metadata, and attaches the artifacts to a GitHub
-   Release.
-
-The workflow rejects a tag when the tag version does not match
-`pyproject.toml`.
-
-The release wheel matrix currently produces 22 wheels and targets Python 3.9
-through 3.14 on:
-
-- Linux manylinux x86_64;
-- Windows x86_64;
-- macOS arm64;
-- macOS Intel x86_64 for Python 3.9 through 3.12.
-
-macOS Intel wheels for Python 3.13 and 3.14 are not built because PyTorch does
-not publish stable `macosx_x86_64` wheels for those Python versions.
-
-PyPI upload is intentionally manual. Download the release artifacts from the
-GitHub Release or from the workflow run, then publish them with:
-
-```bash
-python -m pip install --upgrade twine
-python -m twine upload dist/*
-```
-
-Manual runs of the `Release` workflow build downloadable artifacts without
-creating a GitHub Release.
+## Next Steps
+
+- See the root [README](../README.md) for the project overview and quick start.
+- See [development.md](development.md) for source builds, tests, notebook
+  validation, and releases.

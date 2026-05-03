@@ -49,8 +49,8 @@ dependencies = [
 ]
 
 [project.urls]
-Source = "https://github.com/wonderalexandre/mtlearn"
-Issues = "https://github.com/wonderalexandre/mtlearn/issues"
+Source = "https://github.com/wonderalexandre/MTLearn"
+Issues = "https://github.com/wonderalexandre/MTLearn/issues"
 
 [project.optional-dependencies]
 notebooks = [
@@ -103,6 +103,7 @@ include = [
   "/mtlearn/tests/python/*.py",
   "/scripts/*.py",
   "/docs/installation.md",
+  "/docs/development.md",
   "/external/MorphologicalAttributeFilters/CMakeLists.txt",
   "/external/MorphologicalAttributeFilters/LICENSE",
   "/external/MorphologicalAttributeFilters/README.md",

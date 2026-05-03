@@ -89,7 +89,6 @@ def install_runtime_dependencies(torch_mode: str, force_legacy_numpy: bool) -> N
         "install",
         numpy_requirement(torch_mode, force_legacy_numpy),
         "opencv-python-headless",
-        "scikit-learn",
     )
 
 

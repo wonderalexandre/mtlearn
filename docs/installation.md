@@ -31,6 +31,10 @@ pip install mtlearn
 NumPy below 2, which avoids downgrading the default NumPy stack in environments
 such as Google Colab.
 
+Version 1.0.5 and newer also avoid importing or installing `scikit-learn` for
+the base package. This keeps `import mtlearn` isolated from existing
+`scipy`/`scikit-learn` binaries in environments that already moved to NumPy 2.
+
 The native `_mtlearn` extension links against LibTorch. Version 1.0.4 and newer
 therefore declare tested PyTorch ranges per Python version and platform instead
 of one broad unqualified requirement. PyTorch no longer publishes recent macOS

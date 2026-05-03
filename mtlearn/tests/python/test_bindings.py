@@ -1,5 +1,9 @@
 import mtlearn
+import os
 import pytest
+import subprocess
+import sys
+from pathlib import Path
 
 if not getattr(mtlearn, "WITH_TORCH", False):
     pytest.skip("build has no LibTorch support", allow_module_level=True)
@@ -49,6 +53,51 @@ def test_top_level_public_modules_are_exported():
     assert hasattr(mtlearn, "ConnectedFilterPreprocessingTreeTraversal")
     assert hasattr(mtlearn._bindings, "ConnectedFilterPreprocessingTreeTensors")
     assert hasattr(mtlearn._bindings, "ConnectedFilterPreprocessingTreeTraversal")
+
+
+def test_top_level_import_does_not_require_sklearn():
+    code = """
+import importlib.abc
+import sys
+
+class BlockSklearn(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "sklearn" or fullname.startswith("sklearn."):
+            raise ImportError("blocked sklearn")
+        return None
+
+sys.meta_path.insert(0, BlockSklearn())
+import mtlearn
+from mtlearn import datasets
+assert mtlearn.__version__
+assert datasets.PairedImageDataset
+"""
+    package_root = str(Path(mtlearn.__file__).resolve().parent.parent)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        entry for entry in (package_root, env.get("PYTHONPATH", "")) if entry
+    )
+    subprocess.run([sys.executable, "-c", code], check=True, env=env)
+
+
+def test_dataset_split_indices_match_expected_sizes():
+    from mtlearn.datasets import _split_indices
+
+    train_idx, test_idx = _split_indices(
+        10,
+        test_size=0.25,
+        shuffle=True,
+        random_state=42,
+    )
+
+    assert len(train_idx) == 7
+    assert len(test_idx) == 3
+    assert sorted(np.concatenate([train_idx, test_idx]).tolist()) == list(range(10))
+
+    train_idx, test_idx = _split_indices(10, test_size=3, shuffle=False)
+
+    assert train_idx.tolist() == list(range(7))
+    assert test_idx.tolist() == [7, 8, 9]
 
 
 def test_build_tree_returns_weighted_tree_for_supported_types():

@@ -61,19 +61,26 @@ jobs:
             -DMTLEARN_BUILD_PYTHON=ON \
             -DMTLEARN_WITH_TORCH=ON \
             -DMTLEARN_ENABLE_EMBED=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
             -DPYTHON_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DCMAKE_PREFIX_PATH="${{ steps.cmake-prefix.outputs.value }}"
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel --config Release
 
       - name: Run CTest
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -C Release
 
       - name: Run Python tests
         shell: bash
         run: |
-          export PYTHONPATH="${PWD}/mtlearn/python:${PWD}/build/mtlearn/bindings"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            package_path="$(cygpath -w "${PWD}/mtlearn/python")"
+            bindings_path="$(cygpath -w "${PWD}/build/mtlearn/bindings")"
+            export PYTHONPATH="${package_path};${bindings_path}"
+          else
+            export PYTHONPATH="${PWD}/mtlearn/python:${PWD}/build/mtlearn/bindings"
+          fi
           python -m pytest -q -m "not gradcheck" mtlearn/tests/python
           python -m pytest -q -m gradcheck mtlearn/tests/python
 

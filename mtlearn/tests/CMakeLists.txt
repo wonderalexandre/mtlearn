@@ -102,24 +102,24 @@ if(_mtlearn_build_python_tests)
             "`pip install -e .[test]`.")
     endif()
 
+    set(_mtlearn_path_separator ":")
     if(WIN32)
-        set(_mtlearn_pythonpath "${PROJECT_SOURCE_DIR}/mtlearn/python;${CMAKE_BINARY_DIR}/mtlearn/bindings")
-    else()
-        set(_mtlearn_pythonpath "${PROJECT_SOURCE_DIR}/mtlearn/python:${CMAKE_BINARY_DIR}/mtlearn/bindings")
+        set(_mtlearn_path_separator "$<SEMICOLON>")
     endif()
+    set(_mtlearn_pythonpath "${PROJECT_SOURCE_DIR}/mtlearn/python${_mtlearn_path_separator}${CMAKE_BINARY_DIR}/mtlearn/bindings")
 
     add_test(
         NAME mtl_python_bindings
         COMMAND
             ${CMAKE_COMMAND} -E env
-                PYTHONPATH=${_mtlearn_pythonpath}
+                "PYTHONPATH=${_mtlearn_pythonpath}"
                 ${Python3_EXECUTABLE} -m pytest -q -m "not gradcheck" ${CMAKE_CURRENT_SOURCE_DIR}/python
     )
     add_test(
         NAME mtl_python_gradchecks
         COMMAND
             ${CMAKE_COMMAND} -E env
-                PYTHONPATH=${_mtlearn_pythonpath}
+                "PYTHONPATH=${_mtlearn_pythonpath}"
                 ${Python3_EXECUTABLE} -m pytest -q -m gradcheck ${CMAKE_CURRENT_SOURCE_DIR}/python
     )
 endif()

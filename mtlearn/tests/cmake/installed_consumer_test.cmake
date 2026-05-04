@@ -75,12 +75,18 @@ file(WRITE "${consumer_source_dir}/main.cpp"
 "    return 0;\n"
 "}\n")
 
+set(consumer_configure_command
+    "${CMAKE_COMMAND}"
+    -S "${consumer_source_dir}"
+    -B "${consumer_build_dir}"
+    "-DCMAKE_PREFIX_PATH=${prefix}")
+
+if(DEFINED MTLEARN_CTEST_CONFIG AND NOT "${MTLEARN_CTEST_CONFIG}" STREQUAL "")
+    list(APPEND consumer_configure_command "-DCMAKE_BUILD_TYPE=${MTLEARN_CTEST_CONFIG}")
+endif()
+
 execute_process(
-    COMMAND
-        "${CMAKE_COMMAND}"
-        -S "${consumer_source_dir}"
-        -B "${consumer_build_dir}"
-        "-DCMAKE_PREFIX_PATH=${prefix}"
+    COMMAND ${consumer_configure_command}
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error)
@@ -111,14 +117,17 @@ if(NOT build_result EQUAL 0)
         "stderr:\n${build_error}")
 endif()
 
-set(consumer_executable "${consumer_build_dir}/consumer")
-
-if(DEFINED MTLEARN_CTEST_CONFIG AND NOT "${MTLEARN_CTEST_CONFIG}" STREQUAL "")
-    set(consumer_executable "${consumer_build_dir}/${MTLEARN_CTEST_CONFIG}/consumer")
+set(consumer_executable_name "consumer")
+if(WIN32)
+    set(consumer_executable_name "consumer.exe")
 endif()
 
-if(WIN32)
-    set(consumer_executable "${consumer_executable}.exe")
+set(consumer_executable "${consumer_build_dir}/${consumer_executable_name}")
+if(DEFINED MTLEARN_CTEST_CONFIG AND NOT "${MTLEARN_CTEST_CONFIG}" STREQUAL "")
+    set(config_consumer_executable "${consumer_build_dir}/${MTLEARN_CTEST_CONFIG}/${consumer_executable_name}")
+    if(EXISTS "${config_consumer_executable}")
+        set(consumer_executable "${config_consumer_executable}")
+    endif()
 endif()
 
 execute_process(

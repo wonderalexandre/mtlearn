@@ -2,10 +2,7 @@
 
 This directory contains representative notebooks for the experiments presented in the paper:
 
-> Wonder A. L. Alves, Lucas de P. O. Santos, Ronaldo F. Hashimoto, Nicolas Passat, Anderson H. R. Souza, Dennis J. Silva, Yukiko Kenmochi.  
-> **A trainable connected filter preprocessing layer based on component trees.**  
-> International Conference on Pattern Recognition (ICPR), 2026, Lyon, France.  
-> [hal-05575141](https://hal.science/hal-05575141/)
+> Wonder A. L. Alves, Lucas de P. O. Santos, Ronaldo F. Hashimoto, Nicolas Passat, Anderson H. R. Souza, Dennis J. Silva, Yukiko Kenmochi.   **A trainable connected filter preprocessing layer based on component trees.**  International Conference on Pattern Recognition (ICPR), 2026, Lyon, France. [hal-05575141](https://hal.science/hal-05575141/)
 
 Each notebook corresponds to the **first execution out of 10 independent runs with different random seeds** for a given configuration.
 

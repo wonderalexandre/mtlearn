@@ -49,7 +49,15 @@ if(MTLEARN_WITH_TORCH)
     target_compile_definitions(_mtlearn PRIVATE MTLEARN_WITH_TORCH=1)
 endif()
 
-set_target_properties(_mtlearn PROPERTIES OUTPUT_NAME "_mtlearn")
+set_target_properties(_mtlearn PROPERTIES
+    OUTPUT_NAME "_mtlearn"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+foreach(_mtlearn_config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(_mtlearn PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY_${_mtlearn_config} "${CMAKE_CURRENT_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_${_mtlearn_config} "${CMAKE_CURRENT_BINARY_DIR}")
+endforeach()
 set_property(TARGET _mtlearn PROPERTY CXX_STANDARD 20)
 set_property(TARGET _mtlearn PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET _mtlearn PROPERTY CXX_EXTENSIONS OFF)

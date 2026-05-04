@@ -110,6 +110,9 @@ The main public experiment example is:
 notebooks/experiments/Example_screws_filtering.ipynb
 ```
 
+Representative ICPR 2026 experiment notebooks are available in
+[notebooks/ICPR2026](notebooks/ICPR2026/README.md).
+
 ## Implementation Notes
 
 `ConnectedFilterPreprocessingLayer` is the recommended implementation for new

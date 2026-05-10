@@ -28,7 +28,8 @@ from ._helpers import (
     maybe_refresh_norm_for_key,
     make_stats_payload,
     load_stats_payload,
-    IndexedDatasetWrapper
+    IndexedDatasetWrapper,
+    validate_attributes_for_tree_type,
 )
 
 
@@ -206,8 +207,8 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
         in_channels: Number of input channels.
         attributes_spec: Attribute groups. Each item is one group and must
             contain at least one morphology attribute enum.
-        tree_type: ``"max-tree"``, ``"min-tree"``, or any other value accepted
-            by the facade as a tree of shapes.
+        tree_type: ``"max-tree"``, ``"min-tree"``, ``"tree-of-shapes"``, or
+            the legacy ``"tos"`` alias.
         device: Torch device used for parameters, cached tensors, and outputs.
         scale_mode: ``"minmax01"``, ``"zscore_tree"``, ``"hybrid"``, or
             ``"none"``.
@@ -218,6 +219,11 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
         hybrid_k: Number of standard deviations used for hybrid clipping.
         hybrid_floor_a: Lower bound used when remapping hybrid-normalized
             attributes to ``[a, 1]``.
+        tos_interpolation: Tree-of-shapes interpolation policy. Accepts
+            ``"self-dual"``, ``"min4c-max8c"``, ``"min8c-max4c"``, or the
+            corresponding ``morphology.ToSInterpolation`` enum.
+        tos_infinity_seed_row, tos_infinity_seed_col: Infinity seed used by
+            the tree-of-shapes backend.
     """
     def __init__(self,
                  in_channels,
@@ -231,6 +237,9 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
                  clamp_logits: bool = False,
                  hybrid_k: float = 3.0,
                  hybrid_floor_a: float = 0.05,
+                 tos_interpolation=None,
+                 tos_infinity_seed_row: int = 0,
+                 tos_infinity_seed_col: int = 0,
                  ):
         """Initialize CFP configuration, caches, and learnable parameters.
 
@@ -245,13 +254,19 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
         self.hybrid_floor_a = float(hybrid_floor_a)
 
         self.in_channels = int(in_channels)
-        self.tree_type   = str(tree_type)
+        self.tree_type   = morphology.normalize_tree_type(tree_type)
         self.device      = torch.device(device)
         self.scale_mode  = str(scale_mode)
         self.eps         = float(eps)
         self.beta_f      = float(beta_f)
         self.top_hat     = bool(top_hat)
         self.clamp_logits = bool(clamp_logits)
+        if self.tree_type == "tree-of-shapes":
+            self.tos_interpolation = morphology.normalize_tos_interpolation(tos_interpolation)
+        else:
+            self.tos_interpolation = tos_interpolation
+        self.tos_infinity_seed_row = int(tos_infinity_seed_row)
+        self.tos_infinity_seed_col = int(tos_infinity_seed_col)
 
 
         # Attribute groups and the flat set of attribute types used by them.
@@ -265,6 +280,7 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
             for at in group:
                 all_attr_types_set.add(at)
         self._all_attr_types = list(all_attr_types_set)
+        validate_attributes_for_tree_type(self._all_attr_types, self.tree_type)
 
         self.num_groups   = len(self.group_defs)
         self.out_channels = self.in_channels * self.num_groups
@@ -322,7 +338,13 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
         No explicit mask is needed because the backend uses ``parent[root] =
         root``.
         """
-        tree = build_tree(img_np, self.tree_type)
+        tree = build_tree(
+            img_np,
+            self.tree_type,
+            tos_interpolation=self.tos_interpolation,
+            tos_infinity_seed_row=self.tos_infinity_seed_row,
+            tos_infinity_seed_col=self.tos_infinity_seed_col,
+        )
         residues, tpre, tpost, parent, node_of_pixel = (
             mtlearn.ConnectedFilterPreprocessingTreeTensors.get_info_for_jacobian(tree)
         )
@@ -699,34 +721,34 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
                             gname = self._group_name(group)
                             cols = [self._norm_attrs[key][attr_type].view(-1, 1) for attr_type in group]
                             A_norm = torch.cat(cols, dim=1)  # (numNodes, K)
-                        y_ch = ConnectedFilterPreprocessingImplicitJacobianFunction.apply(
-                            self._weights[gname],
-                            self._biases[gname],
-                            info["residues"],
-                            info["tpre"],
-                            info["tpost"],
-                            info["parent"],
-                            info["node_of_pixel"],
-                            A_norm,
-                            info["numRows"],
-                            info["numCols"],
-                            beta_f,  # caller-provided beta_f
-                            self.clamp_logits,
-                            info["order_forward"],
-                            info["order_backward"]
-                        )
-                        if self.top_hat:
-                            x_bc = x[b, c].to(dtype=torch.float32, device=self.device)
-                            tt = self.tree_type
-                            if tt == "max-tree":
-                                y_out = x_bc - y_ch
-                            elif tt == "min-tree":
-                                y_out = y_ch - x_bc
+                            y_ch = ConnectedFilterPreprocessingImplicitJacobianFunction.apply(
+                                self._weights[gname],
+                                self._biases[gname],
+                                info["residues"],
+                                info["tpre"],
+                                info["tpost"],
+                                info["parent"],
+                                info["node_of_pixel"],
+                                A_norm,
+                                info["numRows"],
+                                info["numCols"],
+                                beta_f,  # caller-provided beta_f
+                                self.clamp_logits,
+                                info["order_forward"],
+                                info["order_backward"]
+                            )
+                            if self.top_hat:
+                                x_bc = x[b, c].to(dtype=torch.float32, device=self.device)
+                                tt = self.tree_type
+                                if tt == "max-tree":
+                                    y_out = x_bc - y_ch
+                                elif tt == "min-tree":
+                                    y_out = y_ch - x_bc
+                                else:
+                                    y_out = torch.abs(y_ch - x_bc)
                             else:
-                                y_out = torch.abs(y_ch - x_bc)
-                        else:
-                            y_out = y_ch
-                        out[b, c * self.num_groups + g].copy_(y_out, non_blocking=True)
+                                y_out = y_ch
+                            out[b, c * self.num_groups + g].copy_(y_out, non_blocking=True)
                     else:
                         img_np = self._to_numpy_u8(x[b, c].detach())
                         tree, info = self._compute_tree_info_for_jacobian(img_np)
@@ -740,34 +762,34 @@ class ConnectedFilterPreprocessingLayer(torch.nn.Module):
                             gname = self._group_name(group)
                             cols = [per_attr_norm[attr_type].view(-1, 1) for attr_type in group]
                             A_norm = torch.cat(cols, dim=1)  # (numNodes, K)
-                        y_ch = ConnectedFilterPreprocessingImplicitJacobianFunction.apply(
-                            self._weights[gname],
-                            self._biases[gname],
-                            info["residues"],
-                            info["tpre"],
-                            info["tpost"],
-                            info["parent"],
-                            info["node_of_pixel"],
-                            A_norm,
-                            info["numRows"],
-                            info["numCols"],
-                            beta_f,  # caller-provided beta_f
-                            self.clamp_logits,
-                            info["order_forward"],
-                            info["order_backward"]
-                        )
-                        if self.top_hat:
-                            x_bc = x[b, c].to(dtype=torch.float32, device=self.device)
-                            tt = self.tree_type
-                            if tt == "max-tree":
-                                y_out = x_bc - y_ch
-                            elif tt == "min-tree":
-                                y_out = y_ch - x_bc
+                            y_ch = ConnectedFilterPreprocessingImplicitJacobianFunction.apply(
+                                self._weights[gname],
+                                self._biases[gname],
+                                info["residues"],
+                                info["tpre"],
+                                info["tpost"],
+                                info["parent"],
+                                info["node_of_pixel"],
+                                A_norm,
+                                info["numRows"],
+                                info["numCols"],
+                                beta_f,  # caller-provided beta_f
+                                self.clamp_logits,
+                                info["order_forward"],
+                                info["order_backward"]
+                            )
+                            if self.top_hat:
+                                x_bc = x[b, c].to(dtype=torch.float32, device=self.device)
+                                tt = self.tree_type
+                                if tt == "max-tree":
+                                    y_out = x_bc - y_ch
+                                elif tt == "min-tree":
+                                    y_out = y_ch - x_bc
+                                else:
+                                    y_out = torch.abs(y_ch - x_bc)
                             else:
-                                y_out = torch.abs(y_ch - x_bc)
-                        else:
-                            y_out = y_ch
-                        out[b, c * self.num_groups + g].copy_(y_out, non_blocking=True)
+                                y_out = y_ch
+                            out[b, c * self.num_groups + g].copy_(y_out, non_blocking=True)
         if was_training:
             self.train()
         else:

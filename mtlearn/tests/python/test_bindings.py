@@ -100,10 +100,38 @@ def test_dataset_split_indices_match_expected_sizes():
     assert test_idx.tolist() == [7, 8, 9]
 
 
+def test_attribute_filter_dataset_accepts_tree_of_shapes_options(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    from mtlearn.datasets import AttributeFilterDataset
+
+    img = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+    path = tmp_path / "sample.png"
+    assert cv2.imwrite(str(path), img)
+
+    dataset = AttributeFilterDataset(
+        root=str(tmp_path),
+        tree_type="tos",
+        attributes=[morphology.AttributeType.AREA],
+        thresholds={"AREA": 0.0},
+        top_hat=True,
+        tos_interpolation="min4c-max8c",
+    )
+
+    img_in, img_out, name = dataset[0]
+
+    assert dataset.tree_type == "tree-of-shapes"
+    assert dataset.tos_interpolation == morphology.ToSInterpolation.Min4cMax8c
+    assert name == "sample.png"
+    assert img_in.shape == (1, 2, 2)
+    assert img_out.shape == (1, 2, 2)
+    assert img_in.dtype == torch.float32
+    assert img_out.dtype == torch.float32
+
+
 def test_build_tree_returns_weighted_tree_for_supported_types():
     img = np.array([[1, 2], [3, 4]], dtype=np.uint8)
 
-    for tree_type in ("max-tree", "min-tree", "tos"):
+    for tree_type in ("max-tree", "min-tree", "tos", "tree-of-shapes"):
         tree = build_tree(img, tree_type)
 
         assert morphology.is_tree(tree)

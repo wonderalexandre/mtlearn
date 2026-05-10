@@ -37,6 +37,24 @@ def test_constructor_rejects_empty_attribute_group():
         )
 
 
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        morphology.AttributeType.MAX_DIST,
+        morphology.AttributeType.BITQUADS_AREA,
+        morphology.AttributeGroup.BITQUADS,
+    ],
+)
+def test_tree_of_shapes_constructor_rejects_adjacency_bound_attributes(attribute):
+    with pytest.raises(ValueError, match="tree-of-shapes CFP does not support"):
+        ConnectedFilterPreprocessingLayer(
+            in_channels=1,
+            attributes_spec=[(attribute,)],
+            tree_type="tree-of-shapes",
+            device="cpu",
+        )
+
+
 def test_forward_rejects_non_batched_input_shape():
     layer = _single_area_layer()
 

@@ -97,15 +97,47 @@ def to_numpy_u8(img2d_t: torch.Tensor) -> np.ndarray:
 
 # ----------------------------- morphology trees ------------------------------
 
-def build_tree(img_np: np.ndarray, tree_type: str):
+def build_tree(
+    img_np: np.ndarray,
+    tree_type: str,
+    *,
+    tos_interpolation=None,
+    tos_infinity_seed_row: int = 0,
+    tos_infinity_seed_col: int = 0,
+):
     """Build the morphology tree requested by ``tree_type``.
 
     Args:
         img_np: 2D ``np.uint8`` image.
-        tree_type: ``"max-tree"``, ``"min-tree"``, or any other value accepted
-            by the facade as a tree of shapes.
+        tree_type: ``"max-tree"``, ``"min-tree"``, ``"tree-of-shapes"``, or
+            the legacy ``"tos"`` alias.
     """
-    return morphology.build_tree(img_np, tree_type)
+    return morphology.build_tree(
+        img_np,
+        tree_type,
+        tos_interpolation=tos_interpolation,
+        tos_infinity_seed_row=tos_infinity_seed_row,
+        tos_infinity_seed_col=tos_infinity_seed_col,
+    )
+
+
+def validate_attributes_for_tree_type(attributes: Iterable[Any], tree_type: str) -> None:
+    """Reject attribute requests that the selected tree type cannot compute."""
+    if morphology.normalize_tree_type(tree_type) != "tree-of-shapes":
+        return
+
+    unsupported = []
+    for attr_type in attributes:
+        name = getattr(attr_type, "name", str(attr_type))
+        if name in {"ALL", "BITQUADS", "MAX_DIST"} or name.startswith("BITQUADS_"):
+            unsupported.append(name)
+
+    if unsupported:
+        names = ", ".join(sorted(set(unsupported)))
+        raise ValueError(
+            "tree-of-shapes CFP does not support attributes that require a "
+            f"single image adjacency relation: {names}"
+        )
 
 
 # ---------------------- dataset-statistics normalization ----------------------

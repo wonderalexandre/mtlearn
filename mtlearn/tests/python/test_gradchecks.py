@@ -16,7 +16,7 @@ from mtlearn import morphology
 pytestmark = [pytest.mark.gradcheck, pytest.mark.slow]
 
 
-def _small_gradcheck_case(dtype):
+def _small_gradcheck_case(dtype, tree_type="max-tree", tos_interpolation=None):
     image = np.array(
         [
             [2, 2, 0],
@@ -25,7 +25,11 @@ def _small_gradcheck_case(dtype):
         ],
         dtype=np.uint8,
     )
-    tree = morphology.create_max_tree(image)
+    tree = morphology.build_tree(
+        image,
+        tree_type,
+        tos_interpolation=tos_interpolation,
+    )
     attributes = morphology.compute_attributes(
         tree,
         [morphology.AttributeType.AREA, morphology.AttributeType.COMPACTNESS],
@@ -70,6 +74,37 @@ def test_explicit_jacobian_function_gradcheck():
 
 def test_implicit_jacobian_function_gradcheck():
     tree, attributes = _small_gradcheck_case(torch.float64)
+    residues, tpre, tpost, parent, node_of_pixel = (
+        mtlearn.ConnectedFilterPreprocessingTreeTensors.get_info_for_jacobian(tree)
+    )
+    residues = residues.to(dtype=torch.float64)
+    weight, bias = _learnable_parameters(torch.float64)
+
+    def filtered_mean(w, b):
+        return mtlearn.layers.ConnectedFilterPreprocessingImplicitJacobianFunction.apply(
+            w,
+            b,
+            residues,
+            tpre,
+            tpost,
+            parent,
+            node_of_pixel,
+            attributes,
+            tree.numRows,
+            tree.numCols,
+            1.0,
+            False,
+        ).mean()
+
+    assert gradcheck(filtered_mean, (weight, bias), eps=1e-6, atol=1e-4)
+
+
+def test_implicit_jacobian_function_gradcheck_tree_of_shapes():
+    tree, attributes = _small_gradcheck_case(
+        torch.float64,
+        tree_type="tree-of-shapes",
+        tos_interpolation="self-dual",
+    )
     residues, tpre, tpost, parent, node_of_pixel = (
         mtlearn.ConnectedFilterPreprocessingTreeTensors.get_info_for_jacobian(tree)
     )

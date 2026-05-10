@@ -23,7 +23,8 @@ from ._helpers import (
     maybe_refresh_norm_for_key,
     make_stats_payload,
     load_stats_payload,
-    IndexedDatasetWrapper
+    IndexedDatasetWrapper,
+    validate_attributes_for_tree_type,
 )
 
 class ConnectedFilterPreprocessingExplicitJacobianFunction(torch.autograd.Function):
@@ -122,8 +123,8 @@ class ConnectedFilterPreprocessingLayerWithExplicitJacobian(torch.nn.Module):
         in_channels: Number of input channels.
         attributes_spec: Attribute groups. Each group must contain at least one
             morphology attribute enum.
-        tree_type: ``"max-tree"``, ``"min-tree"``, or any other value accepted
-            by the facade as a tree of shapes.
+        tree_type: ``"max-tree"``, ``"min-tree"``, ``"tree-of-shapes"``, or
+            the legacy ``"tos"`` alias.
         device: Torch device used for parameters, cached tensors, and outputs.
         scale_mode: ``"minmax01"``, ``"zscore_tree"``, ``"hybrid"``, or
             ``"none"``.
@@ -134,6 +135,11 @@ class ConnectedFilterPreprocessingLayerWithExplicitJacobian(torch.nn.Module):
         hybrid_k: Number of standard deviations used for hybrid clipping.
         hybrid_floor_a: Lower bound used when remapping hybrid-normalized
             attributes to ``[a, 1]``.
+        tos_interpolation: Tree-of-shapes interpolation policy. Accepts
+            ``"self-dual"``, ``"min4c-max8c"``, ``"min8c-max4c"``, or the
+            corresponding ``morphology.ToSInterpolation`` enum.
+        tos_infinity_seed_row, tos_infinity_seed_col: Infinity seed used by
+            the tree-of-shapes backend.
     """
     def __init__(self,
                  in_channels,
@@ -147,6 +153,9 @@ class ConnectedFilterPreprocessingLayerWithExplicitJacobian(torch.nn.Module):
                  clamp_logits: bool = False,
                  hybrid_k: float = 3.0,
                  hybrid_floor_a: float = 0.05,
+                 tos_interpolation=None,
+                 tos_infinity_seed_row: int = 0,
+                 tos_infinity_seed_col: int = 0,
                  ):
         """Initialize dense-Jacobian CFP caches and learnable parameters.
 
@@ -161,13 +170,19 @@ class ConnectedFilterPreprocessingLayerWithExplicitJacobian(torch.nn.Module):
         self.hybrid_floor_a = float(hybrid_floor_a)
 
         self.in_channels = int(in_channels)
-        self.tree_type   = str(tree_type)
+        self.tree_type   = morphology.normalize_tree_type(tree_type)
         self.device      = torch.device(device)
         self.scale_mode  = str(scale_mode)
         self.eps         = float(eps)
         self.beta_f      = float(beta_f)
         self.top_hat     = bool(top_hat)
         self.clamp_logits = bool(clamp_logits)
+        if self.tree_type == "tree-of-shapes":
+            self.tos_interpolation = morphology.normalize_tos_interpolation(tos_interpolation)
+        else:
+            self.tos_interpolation = tos_interpolation
+        self.tos_infinity_seed_row = int(tos_infinity_seed_row)
+        self.tos_infinity_seed_col = int(tos_infinity_seed_col)
 
         # Attribute groups and the flat set of attribute types used by them.
         self.group_defs = []
@@ -180,6 +195,7 @@ class ConnectedFilterPreprocessingLayerWithExplicitJacobian(torch.nn.Module):
             for at in group:
                 all_attr_types_set.add(at)
         self._all_attr_types = list(all_attr_types_set)
+        validate_attributes_for_tree_type(self._all_attr_types, self.tree_type)
 
         self.num_groups   = len(self.group_defs)
         self.out_channels = self.in_channels * self.num_groups
@@ -224,7 +240,13 @@ class ConnectedFilterPreprocessingLayerWithExplicitJacobian(torch.nn.Module):
 
     def _build_tree_jacobian_and_residues(self, img_np: np.ndarray):
         """Build a tree and extract the dense Jacobian plus node residues."""
-        tree = build_tree(img_np, self.tree_type)
+        tree = build_tree(
+            img_np,
+            self.tree_type,
+            tos_interpolation=self.tos_interpolation,
+            tos_infinity_seed_row=self.tos_infinity_seed_row,
+            tos_infinity_seed_col=self.tos_infinity_seed_col,
+        )
         jacobian = mtlearn.ConnectedFilterPreprocessingTreeTensors.get_jacobian(
             tree
         ).to(self.device)

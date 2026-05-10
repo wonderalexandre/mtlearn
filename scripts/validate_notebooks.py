@@ -17,6 +17,7 @@ GRADCHECK_NOTEBOOKS = (
     "notebooks/gradchecks/GradCheck_Tree.ipynb",
     "notebooks/gradchecks/GradCheck_Jacobian.ipynb",
     "notebooks/gradchecks/GradCheck_Implicit_Jacobian.ipynb",
+    "notebooks/gradchecks/GradCheck_TreeOfShapes.ipynb",
 )
 
 SCREWS_EXAMPLE_NOTEBOOK = "notebooks/experiments/Example_screws_filtering.ipynb"

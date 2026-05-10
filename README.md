@@ -94,6 +94,17 @@ y = cfp_layer(x)
 assert y.shape == x.shape
 ```
 
+For self-dual preprocessing, use the tree-of-shapes backend explicitly:
+
+```python
+cfp_tos = ConnectedFilterPreprocessingLayer(
+    in_channels=1,
+    attributes_spec=[(morphology.AttributeType.AREA,)],
+    tree_type="tree-of-shapes",
+    tos_interpolation="self-dual",
+)
+```
+
 ## Examples and Notebooks
 
 Executable examples are available in `notebooks/`.
@@ -144,8 +155,9 @@ as a runtime dependency of `mtlearn`.
 
 **MTLearn** is a research-oriented library. CFP is the first validated member of
 a broader planned family of trainable connected-operator layers. The current
-implementation supports max-tree and min-tree CFP workflows, multi-attribute
-groups, dataset-level attribute normalization, cached preprocessing, and
+implementation supports max-tree, min-tree, and tree-of-shapes CFP workflows
+for adjacency-independent attributes, multi-attribute
+dataset-level attribute normalization, cached preprocessing, and
 PyTorch forward/backward for CFP parameters on CPU or CUDA tensors.
 
 ## Citation
